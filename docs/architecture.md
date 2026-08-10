@@ -8,7 +8,7 @@ outlast their current implementations.
 ## Layered flow
 
 ```
-Change Capture           (future: packages/git — capture baseSha + patch + untracked)
+Change Capture           (future: packages/git — snapshot baseSha + working-tree files)
       ↓
 Execution Request        (packages/contracts — CreateExecutionRequest)
       ↓

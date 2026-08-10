@@ -34,7 +34,9 @@ class LocalExecutionEnvironment implements ExecutionEnvironment {
   ) {}
 
   async prepareWorkspace(snapshot: ChangeSnapshot): Promise<void> {
-    for (const file of snapshot.untrackedFiles ?? []) {
+    // The snapshot already carries the exact working-tree state to reproduce;
+    // materializing the files is the whole job — no base tree, no patch apply.
+    for (const file of snapshot.files) {
       const dest = this.resolveInsideWorkspace(file.path);
       await fs.mkdir(path.dirname(dest), { recursive: true });
       await fs.writeFile(dest, Buffer.from(file.contentBase64, "base64"));
@@ -42,28 +44,10 @@ class LocalExecutionEnvironment implements ExecutionEnvironment {
         await fs.chmod(dest, file.mode);
       }
     }
-
-    const patch = snapshot.patch?.trim();
-    if (patch && patch.length > 0) {
-      const patchPath = path.join(this.workdir, ".axle-change.patch");
-      await fs.writeFile(patchPath, snapshot.patch);
-      const { result, output } = await this.spawn({
-        command: `git apply --whitespace=nowarn "${patchPath}"`,
-        timeoutSeconds: 120,
-        maxOutputBytes: 1_000_000,
-      });
-      await fs.rm(patchPath, { force: true });
-      if (result.exitCode !== 0) {
-        throw new Error(
-          `Failed to apply change patch in workspace (exit ${result.exitCode}).\n${output}`,
-        );
-      }
-    }
   }
 
   async run(command: CommandRequest): Promise<CommandResult> {
-    const { result } = await this.spawn(command);
-    return result;
+    return this.spawn(command);
   }
 
   async collectArtifacts(): Promise<CollectedArtifact[]> {
@@ -87,9 +71,7 @@ class LocalExecutionEnvironment implements ExecutionEnvironment {
     return dest;
   }
 
-  private spawn(
-    command: CommandRequest,
-  ): Promise<{ result: CommandResult; output: string }> {
+  private spawn(command: CommandRequest): Promise<CommandResult> {
     const cwd = command.cwd
       ? this.resolveInsideWorkspace(command.cwd)
       : this.workdir;
@@ -106,7 +88,6 @@ class LocalExecutionEnvironment implements ExecutionEnvironment {
 
       let outputBytes = 0;
       let truncated = false;
-      let captured = "";
       const maxOutput = command.maxOutputBytes;
 
       const handleChunk = (stream: OutputChunk["stream"], buf: Buffer) => {
@@ -120,10 +101,8 @@ class LocalExecutionEnvironment implements ExecutionEnvironment {
           slice = buf.subarray(0, remaining);
           truncated = true;
         }
-        const text = slice.toString("utf8");
         outputBytes += slice.byteLength;
-        captured += text;
-        command.onOutput?.({ stream, data: text });
+        command.onOutput?.({ stream, data: slice.toString("utf8") });
       };
 
       child.stdout?.on("data", (b: Buffer) => handleChunk("stdout", b));
@@ -167,14 +146,11 @@ class LocalExecutionEnvironment implements ExecutionEnvironment {
         if (escalationTimer) clearTimeout(escalationTimer);
         command.signal?.removeEventListener("abort", onAbort);
         resolve({
-          result: {
-            exitCode,
-            timedOut,
-            durationMs: Date.now() - startedAt,
-            outputBytes,
-            truncated,
-          },
-          output: captured,
+          exitCode,
+          timedOut,
+          durationMs: Date.now() - startedAt,
+          outputBytes,
+          truncated,
         });
       };
 

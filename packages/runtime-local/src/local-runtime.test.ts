@@ -89,7 +89,7 @@ describe("LocalRuntime", () => {
     try {
       await env.prepareWorkspace({
         ...emptyChangeSnapshot(),
-        untrackedFiles: [
+        files: [
           {
             path: "hello.txt",
             contentBase64: Buffer.from("hi-from-axle").toString("base64"),

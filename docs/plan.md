@@ -40,54 +40,65 @@ a working LocalRuntime (Docker stubbed), API + worker + engine, diagnostics
 
 ## Phase 1 — Change capture + `axle verify` (Local runtime)
 
-**Goal.** Turn Axle from "run a command" into "verify an uncommitted change".
-This is the phase that satisfies the brief's **Definition of Done** (on the Local
-runtime; Docker follows in Phase 2).
+**Goal.** Turn Axle from "run a command" into "verify an uncommitted change" —
+satisfying the brief's **Definition of Done** on the Local runtime (Docker
+follows in Phase 2).
+
+**Guiding decision — capture the state, not the diff.** The environment needs
+the agent's *current working tree* in a clean place. The obvious design ships a
+base tree + a patch + untracked files and *reconstructs* the tree (base-tree
+transport, `git apply`, three moving parts with real edge cases: CRLF, renames,
+binary, partial hunks). Axle instead ships the **relevant working-tree files
+themselves**. The snapshot already *is* the desired state, so `prepareWorkspace`
+just writes the files. This is self-contained (needs no reachable remote and no
+base tree), binary-safe, and makes Docker prep in Phase 2 trivial (tar →
+`putArchive`). It is precisely the "lightweight repository snapshot" the brief
+calls for when there is no reachable remote. A patch-against-remote transport can
+be added later behind the same `prepareWorkspace` seam *if* very large repos ever
+demand it — deferred until then. (The `ChangeSnapshot` contract and
+`prepareWorkspace` were already simplified to this files model.)
 
 **Deliverables.**
 
-1. **`packages/git` — change capture.**
-   - Detect the repo root and base SHA (`git rev-parse`).
-   - Capture the tracked diff (`git diff HEAD`) and relevant untracked files
-     (`git ls-files --others --exclude-standard`).
-   - Exclusion mechanism: honour `.gitignore` + a new `.axleignore`, layered over
-     a built-in secret denylist (`.env*`, keys, `node_modules`, caches, build
-     output). Produce a `ChangeSnapshot` (already defined in `contracts`).
-   - **Base-tree transport:** ship the base commit tree (`git archive`) as an
-     input bundle via the `ArtifactStore`, so a clean environment can apply the
-     patch onto it. (For local same-machine runs this is a same-host copy;
-     remote clone is a later optimization.)
-2. **Workspace preparation** in the runtimes.
-   - `LocalExecutionEnvironment.prepareWorkspace`: extract base tree → apply
-     patch (`git apply`) → materialize untracked files. (The apply/materialize
-     scaffolding already exists; wire the base-tree extraction.)
-3. **`packages/planner` — verification planning.**
-   - Deterministic project detection (`ProjectAnalysis`): package manager
-     (lockfile), scripts, TypeScript presence, test framework — **no LLM**.
-   - Deterministic plan rules → `ExecutionPlan`: install (`--frozen-lockfile`
-     variants) → typecheck (if script) → lint (optional) → test → build (config
-     gated). Reads `axle.yaml` overrides when present.
-4. **`axle verify`** — wire capture + detection + planner + execution, streaming
-   the workspace-analysis + plan + result output from the brief (§6). Flags:
+1. **`packages/git` — change capture (one pure function, git as source of truth).**
+   - `baseSha = git rev-parse HEAD`.
+   - Relevant paths in a single command:
+     `git ls-files -z --cached --others --exclude-standard` — tracked + untracked
+     with `.gitignore` already honoured — read at their current on-disk content.
+     Deleted files are simply absent, which reproduces the deletion.
+   - Exclusion: layer `.axleignore` + a built-in secret denylist (`.env*`, keys,
+     `.ssh`, `secrets/**`) over git's view via the `ignore` package — don't
+     reimplement gitignore semantics.
+   - `changedFiles` metadata from `git status --porcelain`; size/count guards that
+     fail fast pointing at `.axleignore`.
+   - Returns `ChangeSnapshot { baseSha, changedFiles, files }`.
+2. **`packages/planner` — detection + planning as two pure functions** (no classes,
+   no plugin registry for a single ecosystem):
+   - `analyze(root) → ProjectAnalysis` — package manager (lockfile), scripts,
+     TypeScript, test framework. Deterministic, **no LLM**.
+   - `plan(analysis, opts) → ExecutionPlan` — install (`--frozen-lockfile` per pm)
+     → typecheck (if script) → lint (optional) → test → build (gated). Honours
+     `axle.yaml` overrides.
+3. **`axle verify`** — capture → analyze → plan → print summary + plan → submit →
+   stream. Reuses `run`'s streaming/rendering, so `verify` stays thin. Flags:
    `--command`, `--profile`, `--json`, `--no-cache`, `--intent`.
-5. **`examples/node-typescript`** — a tiny TS app + Vitest + `typecheck`/`build`
-   scripts, and a documented demo: introduce a failing change, run `axle verify`,
-   watch Axle catch it.
+4. **`examples/node-typescript`** — a tiny TS app + Vitest + `typecheck`/`build`,
+   and a documented demo: break a test, run `axle verify`, watch Axle catch it.
 
-**Key files.** `packages/git/*` (new), `packages/planner/*` (new),
-`packages/runtime-local/src/local-runtime.ts` (workspace prep), `packages/cli`
-(new `verify` command), `examples/node-typescript/*` (new).
+**Key files.** `packages/git/*` (new), `packages/planner/*` (new), `packages/cli`
+(new `verify` command), `examples/node-typescript/*` (new). No runtime or
+contract changes needed — the files-snapshot seam is already in place.
 
 **Exit criteria (= brief Definition of Done, Local).** From a clean checkout:
-`pnpm install` → start Axle → make an uncommitted change that breaks a test →
-`axle verify` captures the patch, runs in a clean isolated dir, applies the
-change, installs deps, runs verification, identifies the failing step, and
-returns structured diagnostics; `axle inspect <id>` shows the record; the
-developer's workspace is unmodified.
+make an uncommitted change that breaks a test → `axle verify` captures the working
+tree, runs in a clean isolated dir, installs deps, runs verification, identifies
+the failing step, and returns structured diagnostics; `axle inspect <id>` shows
+the record; the developer's workspace is unmodified.
 
-**Risks.** Patch-apply edge cases (CRLF, renames, binary); base-tree transport
-size for large repos (mitigate with size guards + the remote-clone path later);
-secret-exclusion correctness (test hard — clean/modified/untracked/ignored).
+**Risks.** Secret-exclusion correctness (test hard: clean / modified / untracked
+/ ignored / denylisted); snapshot size on atypical repos (largely handled by
+git's `.gitignore` view — `node_modules`/build already excluded — plus
+`.axleignore` and guards); symlinks (skip in v1, note it).
 
 ---
 

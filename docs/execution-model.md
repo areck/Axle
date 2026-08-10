@@ -21,7 +21,7 @@ of *what an agent asked for, what happened, and what it means*.
 interface Execution {
   id: string;                     // exec_<ulid> — time-sortable
   repository: RepositoryRef;      // where the work applies
-  change: ChangeSnapshot;         // baseSha + patch + untracked files
+  change: ChangeSnapshot;         // baseSha + materialized working-tree files
   intent?: string;                // why the agent ran this
   profile: ExecutionProfile;      // e.g. node-22 (+ optional resources)
   plan: ExecutionPlan;            // what Axle decided to run
@@ -81,10 +81,13 @@ without a migration.
 
 ## The change snapshot
 
-`ChangeSnapshot` carries `baseSha`, a `patch`, and any required `untrackedFiles`
-(base64, so it is binary-safe and JSON-transportable). This is what lets an agent
-verify **uncommitted** work — no commit, no branch, no PR required. The shape
-intentionally leaves room for richer transports later (git branch, GitHub PR,
-full workspace snapshot, remote repository). In this bootstrap pass, `axle run`
-submits an empty snapshot (there is no diff to apply); populating it from a live
-git workspace is the next milestone.
+`ChangeSnapshot` carries `baseSha`, `changedFiles` (metadata), and `files` — the
+materialized project files to write into a clean workspace (base64, so it is
+binary-safe and JSON-transportable). Shipping the working-tree state directly —
+rather than a base tree plus a patch to reconstruct it — is what lets an agent
+verify **uncommitted** work with no commit, branch, or PR, and with no
+patch-apply step in the runtime. The shape leaves room for richer transports
+later (a patch against a base cloned from a remote, a git branch, a PR) behind
+the same `prepareWorkspace` seam, to be added only when a real need appears. In
+this bootstrap pass, `axle run` submits an empty snapshot; populating it from a
+live git workspace (`packages/git` + `axle verify`) is the next milestone.

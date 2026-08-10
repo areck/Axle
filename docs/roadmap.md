@@ -26,10 +26,10 @@ The smallest coherent slice that proves the primitive:
 The pieces the bootstrap deliberately deferred, each behind interfaces that
 already exist:
 
-1. **Change capture** (`packages/git`) — determine the base SHA, capture the
-   tracked diff and relevant untracked files, honour `.gitignore` / `.axleignore`
-   and a secret denylist. Transport the base tree so the runtime can apply the
-   patch onto it.
+1. **Change capture** (`packages/git`) — snapshot the current working-tree files
+   (git enumerates them, honouring `.gitignore`), layered with `.axleignore` and a
+   secret denylist, plus `baseSha`/`changedFiles` provenance. The runtime just
+   writes the files — no base tree, no patch apply. See [`plan.md`](plan.md#phase-1--change-capture--axle-verify-local-runtime).
 2. **Project detection + planner** (`packages/planner`) — deterministic Node/TS
    detection (package manager, scripts, test framework) producing an
    `ExecutionPlan` (install → typecheck → lint → test → build).

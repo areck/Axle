@@ -48,23 +48,30 @@ export const SnapshotFileSchema = z.object({
 export type SnapshotFile = z.infer<typeof SnapshotFileSchema>;
 
 /**
- * A snapshot of an agent's uncommitted change.
+ * A self-contained snapshot of the working-tree state an agent wants verified.
  *
- * The first implementation transmits the base commit, a patch, and any required
- * untracked files. The shape intentionally leaves room for future transports
- * (git branch, PR, full workspace snapshot, remote repository).
+ * `files` are the materialized project files to write into a clean workspace —
+ * the whole transport. There is deliberately no patch to apply and no base tree
+ * to reconstruct: the snapshot already *is* the desired state, which keeps
+ * workspace preparation trivial and binary-safe across every runtime. `baseSha`
+ * and `changedFiles` are provenance metadata (display + the execution graph).
+ *
+ * The shape leaves room for future transports (a patch against a base cloned
+ * from a remote, a git branch, a PR) behind the same `prepareWorkspace` seam,
+ * to be added only when a real need — e.g. very large repositories — appears.
  */
 export const ChangeSnapshotSchema = z.object({
   baseSha: z.string(),
-  patch: z.string().default(""),
-  untrackedFiles: z.array(SnapshotFileSchema).optional(),
+  /** Which files changed vs `baseSha` — metadata for display and the graph. */
   changedFiles: z.array(ChangedFileSchema).default([]),
+  /** The materialized project files to write into the clean workspace. */
+  files: z.array(SnapshotFileSchema).default([]),
 });
 export type ChangeSnapshot = z.infer<typeof ChangeSnapshotSchema>;
 
-/** An empty change snapshot — used by `axle run` where there is no diff to apply. */
+/** An empty change snapshot — used by `axle run`, which ships no workspace. */
 export function emptyChangeSnapshot(baseSha = "0000000"): ChangeSnapshot {
-  return { baseSha, patch: "", changedFiles: [] };
+  return { baseSha, changedFiles: [], files: [] };
 }
 
 // --- Execution profile -----------------------------------------------------
