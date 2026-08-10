@@ -49,50 +49,29 @@ export async function runCommand(
   command: string,
   options: RunOptions,
 ): Promise<void> {
-  const client = new AxleClient(options.api);
-  if (!(await client.health())) {
-    fail(
-      `Cannot reach the Axle API at ${options.api}. Start it with: ${pc.bold("pnpm dev")}`,
-    );
-  }
+  const client = await connect(options.api);
 
   const request: CreateExecutionRequest = {
     repository: { name: path.basename(process.cwd()) },
     profile: { name: options.profile },
     intent: options.intent,
-    plan: {
+    plan: commandPlan(command, {
       profile: options.profile,
-      steps: [
-        {
-          id: "cmd",
-          name: "command",
-          command,
-          timeoutSeconds: options.timeout,
-          required: true,
-        },
-      ],
-    },
+      timeoutSeconds: options.timeout,
+    }),
   };
-
-  const execution = await client.createExecution(request);
 
   if (!options.json) {
     heading("Run");
-    field("Execution", execution.id);
     field("Profile", options.profile);
     field("Command", command);
   }
 
-  await streamExecution(client, execution.id, options.json);
+  await submitAndStream(client, request, options.json);
 }
 
 export async function verifyCommand(options: VerifyOptions): Promise<void> {
-  const client = new AxleClient(options.api);
-  if (!(await client.health())) {
-    fail(
-      `Cannot reach the Axle API at ${options.api}. Start it with: ${pc.bold("pnpm dev")}`,
-    );
-  }
+  const client = await connect(options.api);
 
   const cwd = process.cwd();
   if (!(await isGitRepo(cwd))) {
@@ -127,12 +106,7 @@ export async function verifyCommand(options: VerifyOptions): Promise<void> {
     renderPlan(plan);
   }
 
-  const execution = await client.createExecution(request);
-  if (!options.json) {
-    field("Execution", execution.id);
-  }
-
-  await streamExecution(client, execution.id, options.json);
+  await submitAndStream(client, request, options.json);
 }
 
 export async function inspectCommand(
@@ -224,6 +198,29 @@ export async function doctorCommand(options: { api: string }): Promise<void> {
 }
 
 // --- helpers ---------------------------------------------------------------
+
+/** Build a client and fail fast with a friendly message if the API is down. */
+async function connect(api: string): Promise<AxleClient> {
+  const client = new AxleClient(api);
+  if (!(await client.health())) {
+    fail(
+      `Cannot reach the Axle API at ${api}. Start it with: ${pc.bold("pnpm dev")}`,
+    );
+  }
+  return client;
+}
+
+/** Submit an execution and stream it to completion — the shared tail of
+ * `axle run` and `axle verify`. */
+async function submitAndStream(
+  client: AxleClient,
+  request: CreateExecutionRequest,
+  json: boolean,
+): Promise<void> {
+  const execution = await client.createExecution(request);
+  if (!json) field("Execution", execution.id);
+  await streamExecution(client, execution.id, json);
+}
 
 async function streamExecution(
   client: AxleClient,
