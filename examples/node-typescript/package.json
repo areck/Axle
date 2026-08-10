@@ -1,0 +1,16 @@
+{
+  "name": "axle-example-node-typescript",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A tiny standalone Node/TypeScript project for demonstrating `axle verify`.",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "tsc"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  }
+}
