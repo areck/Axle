@@ -31,6 +31,8 @@ export interface CommandRequest {
   maxOutputBytes: number;
   /** Called for each chunk of streamed output. */
   onOutput?: (chunk: OutputChunk) => void;
+  /** Aborting this signal kills the running command (e.g. on cancellation). */
+  signal?: AbortSignal;
 }
 
 export interface CommandResult {

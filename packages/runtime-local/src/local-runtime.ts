@@ -70,6 +70,7 @@ class LocalExecutionEnvironment implements ExecutionEnvironment {
       : this.workdir;
     const env = { ...this.baseEnv, ...(command.env ?? {}) };
     const startedAt = Date.now();
+    const signal = command.signal;
 
     return new Promise((resolve) => {
       const child = spawn(command.command, {
@@ -129,11 +130,20 @@ class LocalExecutionEnvironment implements ExecutionEnvironment {
       }, command.timeoutSeconds * 1000);
       timer.unref?.();
 
+      // Cancellation from the engine aborts the signal; kill the process group
+      // through the same graceful escalation as a timeout.
+      const onAbort = () => escalate();
+      if (signal) {
+        if (signal.aborted) escalate();
+        else signal.addEventListener("abort", onAbort, { once: true });
+      }
+
       const finish = (exitCode: number | null) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
         if (escalationTimer) clearTimeout(escalationTimer);
+        signal?.removeEventListener("abort", onAbort);
         resolve({
           exitCode,
           timedOut,
