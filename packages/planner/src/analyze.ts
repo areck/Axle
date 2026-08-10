@@ -2,7 +2,6 @@ import fs from "node:fs";
 import path from "node:path";
 
 export type PackageManager = "npm" | "pnpm" | "yarn";
-export type TestFramework = "vitest" | "jest" | "mocha";
 
 /**
  * A deterministic, LLM-free reading of a project directory — enough to plan a
@@ -10,9 +9,10 @@ export type TestFramework = "vitest" | "jest" | "mocha";
  */
 export interface ProjectAnalysis {
   packageManager: PackageManager;
+  /** Whether a lockfile exists for the detected package manager. */
+  hasLockfile: boolean;
   scripts: Record<string, string>;
   hasTypeScript: boolean;
-  testFramework?: TestFramework;
 }
 
 interface PackageJson {
@@ -20,6 +20,12 @@ interface PackageJson {
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
 }
+
+const LOCKFILES: Record<PackageManager, string[]> = {
+  pnpm: ["pnpm-lock.yaml"],
+  yarn: ["yarn.lock"],
+  npm: ["package-lock.json", "npm-shrinkwrap.json"],
+};
 
 export function analyzeProject(root: string): ProjectAnalysis {
   let pkg: PackageJson;
@@ -34,12 +40,15 @@ export function analyzeProject(root: string): ProjectAnalysis {
   }
 
   const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+  const packageManager = detectPackageManager(root);
   return {
-    packageManager: detectPackageManager(root),
+    packageManager,
+    hasLockfile: LOCKFILES[packageManager].some((f) =>
+      fs.existsSync(path.join(root, f)),
+    ),
     scripts: pkg.scripts ?? {},
     hasTypeScript:
       fs.existsSync(path.join(root, "tsconfig.json")) || "typescript" in deps,
-    testFramework: detectTestFramework(deps),
   };
 }
 
@@ -47,13 +56,4 @@ function detectPackageManager(root: string): PackageManager {
   if (fs.existsSync(path.join(root, "pnpm-lock.yaml"))) return "pnpm";
   if (fs.existsSync(path.join(root, "yarn.lock"))) return "yarn";
   return "npm"; // package-lock.json, or no lockfile
-}
-
-function detectTestFramework(
-  deps: Record<string, string>,
-): TestFramework | undefined {
-  if ("vitest" in deps) return "vitest";
-  if ("jest" in deps) return "jest";
-  if ("mocha" in deps) return "mocha";
-  return undefined;
 }

@@ -29,7 +29,7 @@ afterEach(async () => {
 });
 
 describe("analyzeProject", () => {
-  it("detects pnpm + TypeScript + vitest", async () => {
+  it("detects pnpm + TypeScript + a lockfile", async () => {
     const dir = await project(
       {
         scripts: { test: "vitest run" },
@@ -40,14 +40,19 @@ describe("analyzeProject", () => {
     const analysis = analyzeProject(dir);
     expect(analysis.packageManager).toBe("pnpm");
     expect(analysis.hasTypeScript).toBe(true);
-    expect(analysis.testFramework).toBe("vitest");
+    expect(analysis.hasLockfile).toBe(true);
   });
 
-  it("detects npm from package-lock.json and defaults to npm otherwise", async () => {
+  it("detects npm from package-lock.json and defaults to npm (no lockfile)", async () => {
     const npm = await project({}, { "package-lock.json": "{}" });
-    expect(analyzeProject(npm).packageManager).toBe("npm");
+    const npmAnalysis = analyzeProject(npm);
+    expect(npmAnalysis.packageManager).toBe("npm");
+    expect(npmAnalysis.hasLockfile).toBe(true);
+
     const bare = await project({});
-    expect(analyzeProject(bare).packageManager).toBe("npm");
+    const bareAnalysis = analyzeProject(bare);
+    expect(bareAnalysis.packageManager).toBe("npm");
+    expect(bareAnalysis.hasLockfile).toBe(false);
   });
 
   it("throws for a non-Node directory", async () => {
@@ -99,5 +104,21 @@ describe("planVerification", () => {
     expect(plan.steps.map((s) => s.id)).toEqual(["install", "test"]);
     expect(plan.steps[0]?.command).toBe("pnpm install --frozen-lockfile");
     expect(plan.steps[1]?.command).toBe("pnpm test");
+  });
+
+  it("falls back to a plain install when there is no lockfile", async () => {
+    const npm = await project({ scripts: { test: "node --test" } });
+    expect(planVerification(analyzeProject(npm), opts).steps[0]?.command).toBe(
+      "npm install",
+    );
+
+    const pnpm = await project(
+      { scripts: { test: "vitest run" } },
+      { "pnpm-lock.yaml": "" },
+    );
+    // sanity: lockfile present still uses the frozen path
+    expect(planVerification(analyzeProject(pnpm), opts).steps[0]?.command).toBe(
+      "pnpm install --frozen-lockfile",
+    );
   });
 });

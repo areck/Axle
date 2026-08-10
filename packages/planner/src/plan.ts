@@ -15,9 +15,9 @@ export function planVerification(
   analysis: ProjectAnalysis,
   options: PlanOptions,
 ): ExecutionPlan {
-  const { packageManager: pm, scripts, hasTypeScript } = analysis;
+  const { packageManager: pm, hasLockfile, scripts, hasTypeScript } = analysis;
   const steps: PlannedStep[] = [
-    step("install", installCommand(pm), options, true),
+    step("install", installCommand(pm, hasLockfile), options, true),
   ];
 
   if (scripts.typecheck) {
@@ -76,10 +76,16 @@ function step(
   };
 }
 
-function installCommand(pm: PackageManager): string {
-  if (pm === "pnpm") return "pnpm install --frozen-lockfile";
-  if (pm === "yarn") return "yarn install --frozen-lockfile";
-  return "npm ci";
+// `--frozen-lockfile` / `npm ci` require a lockfile; fall back to a plain
+// install when none is present (otherwise the install step fails outright).
+function installCommand(pm: PackageManager, hasLockfile: boolean): string {
+  if (pm === "pnpm") {
+    return hasLockfile ? "pnpm install --frozen-lockfile" : "pnpm install";
+  }
+  if (pm === "yarn") {
+    return hasLockfile ? "yarn install --frozen-lockfile" : "yarn install";
+  }
+  return hasLockfile ? "npm ci" : "npm install";
 }
 
 function testCommand(pm: PackageManager): string {
