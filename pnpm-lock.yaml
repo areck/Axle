@@ -77,6 +77,13 @@ importers:
       '@axle/runtime-local':
         specifier: workspace:*
         version: link:../../packages/runtime-local
+    devDependencies:
+      '@axle/git':
+        specifier: workspace:*
+        version: link:../../packages/git
+      '@axle/planner':
+        specifier: workspace:*
+        version: link:../../packages/planner
 
   packages/artifacts:
     dependencies:
