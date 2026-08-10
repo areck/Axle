@@ -6,8 +6,11 @@ import type {
   CreateExecutionRequest,
   Execution,
   ExecutionEvent,
+  ExecutionPlan,
   ExecutionStatus,
 } from "@axle/contracts";
+import { captureWorkspace, isGitRepo } from "@axle/git";
+import { analyzeProject, commandPlan, planVerification } from "@axle/planner";
 import pc from "picocolors";
 import { AxleClient } from "./client";
 import {
@@ -18,6 +21,7 @@ import {
   heading,
   renderDiagnostic,
   renderExecutionDetail,
+  renderPlan,
   stepSymbol,
   symbols,
 } from "./ui";
@@ -32,45 +36,77 @@ export interface RunOptions {
   json: boolean;
 }
 
+export interface VerifyOptions {
+  api: string;
+  profile: string;
+  timeout: number;
+  intent?: string;
+  json: boolean;
+  command?: string;
+}
+
 export async function runCommand(
   command: string,
   options: RunOptions,
 ): Promise<void> {
-  const client = new AxleClient(options.api);
-  if (!(await client.health())) {
-    fail(
-      `Cannot reach the Axle API at ${options.api}. Start it with: ${pc.bold("pnpm dev")}`,
-    );
-  }
+  const client = await connect(options.api);
 
   const request: CreateExecutionRequest = {
     repository: { name: path.basename(process.cwd()) },
     profile: { name: options.profile },
     intent: options.intent,
-    plan: {
+    plan: commandPlan(command, {
       profile: options.profile,
-      steps: [
-        {
-          id: "cmd",
-          name: "command",
-          command,
-          timeoutSeconds: options.timeout,
-          required: true,
-        },
-      ],
-    },
+      timeoutSeconds: options.timeout,
+    }),
   };
-
-  const execution = await client.createExecution(request);
 
   if (!options.json) {
     heading("Run");
-    field("Execution", execution.id);
     field("Profile", options.profile);
     field("Command", command);
   }
 
-  await streamExecution(client, execution.id, options.json);
+  await submitAndStream(client, request, options.json);
+}
+
+export async function verifyCommand(options: VerifyOptions): Promise<void> {
+  const client = await connect(options.api);
+
+  const cwd = process.cwd();
+  if (!(await isGitRepo(cwd))) {
+    fail(
+      "`axle verify` must run inside a git repository — it captures the working tree.",
+    );
+  }
+
+  const snapshot = await captureWorkspace(cwd);
+  const planOptions = {
+    profile: options.profile,
+    timeoutSeconds: options.timeout,
+  };
+  const plan: ExecutionPlan = options.command
+    ? commandPlan(options.command, planOptions)
+    : planVerification(analyzeProject(cwd), planOptions);
+
+  const request: CreateExecutionRequest = {
+    repository: { name: path.basename(cwd) },
+    change: snapshot,
+    intent: options.intent,
+    profile: { name: options.profile },
+    plan,
+  };
+
+  if (!options.json) {
+    heading("Verify");
+    field("Repository", path.basename(cwd));
+    field("Base", snapshot.baseSha.slice(0, 7));
+    field("Changed files", String(snapshot.changedFiles.length));
+    if (plan.reason) field("Project", plan.reason);
+    renderPlan(plan);
+  }
+
+  await submitAndStream(client, request, options.json);
 }
 
 export async function inspectCommand(
@@ -162,6 +198,29 @@ export async function doctorCommand(options: { api: string }): Promise<void> {
 }
 
 // --- helpers ---------------------------------------------------------------
+
+/** Build a client and fail fast with a friendly message if the API is down. */
+async function connect(api: string): Promise<AxleClient> {
+  const client = new AxleClient(api);
+  if (!(await client.health())) {
+    fail(
+      `Cannot reach the Axle API at ${api}. Start it with: ${pc.bold("pnpm dev")}`,
+    );
+  }
+  return client;
+}
+
+/** Submit an execution and stream it to completion — the shared tail of
+ * `axle run` and `axle verify`. */
+async function submitAndStream(
+  client: AxleClient,
+  request: CreateExecutionRequest,
+  json: boolean,
+): Promise<void> {
+  const execution = await client.createExecution(request);
+  if (!json) field("Execution", execution.id);
+  await streamExecution(client, execution.id, json);
+}
 
 async function streamExecution(
   client: AxleClient,

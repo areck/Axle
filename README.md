@@ -153,16 +153,24 @@ pnpm axle executions                   # recent history
 
 | Command | Description |
 | --- | --- |
-| `axle run "<command>"` | Run a command in an isolated execution and stream structured evidence. |
+| `axle verify` | Capture the working tree, plan verification (install → typecheck → lint → test → build), and run it in isolation. |
+| `axle run "<command>"` | Run a single command in an isolated execution and stream structured evidence. |
 | `axle inspect <id>` | Show the full record for an execution (steps, diagnostics, artifacts, timing). |
 | `axle executions` | List recent execution history. |
 | `axle doctor` | Validate local prerequisites and connectivity. |
 
 Global: `--api <url>` (defaults to `AXLE_API_URL` / `http://127.0.0.1:8787`).
-`run`/`inspect`/`executions` accept `--json` for machine-readable output.
+`verify`/`run`/`inspect`/`executions` accept `--json` for machine-readable output.
 
-`axle verify` — automatic project detection + a planned build/typecheck/test
-sequence from an uncommitted diff — is the next pass.
+### `axle verify`
+
+Run inside a project directory (it captures that project — even a subdirectory
+of a monorepo). Axle reads the uncommitted working tree, detects the package
+manager / scripts / TypeScript, plans a verification, and runs it in a clean
+sandbox. See [`examples/node-typescript`](examples/node-typescript) for a
+break-a-test demo. `--command "<cmd>"` runs a single command instead of a plan.
+Secrets are excluded by default (`.gitignore` + `.axleignore` + a built-in
+denylist); nothing is committed or pushed.
 
 ## How it works
 

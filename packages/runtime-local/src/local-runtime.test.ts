@@ -69,6 +69,26 @@ describe("LocalRuntime", () => {
     }
   });
 
+  it("kills a running command when its signal is aborted", async () => {
+    const env = await runtime.createEnvironment(makeRequest());
+    try {
+      const controller = new AbortController();
+      const started = Date.now();
+      setTimeout(() => controller.abort(), 200);
+      const result = await env.run({
+        command: "sleep 10",
+        timeoutSeconds: 30,
+        maxOutputBytes: 1000,
+        signal: controller.signal,
+      });
+      // Resolved by the abort, not the 30s timeout or the 10s sleep.
+      expect(result.timedOut).toBe(false);
+      expect(Date.now() - started).toBeLessThan(5000);
+    } finally {
+      await env.destroy();
+    }
+  });
+
   it("truncates output beyond the cap", async () => {
     const env = await runtime.createEnvironment(makeRequest());
     try {

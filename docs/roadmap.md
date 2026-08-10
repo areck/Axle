@@ -21,24 +21,29 @@ The smallest coherent slice that proves the primitive:
 - **CLI**: `run`, `inspect`, `executions`, `doctor`.
 - Proven end-to-end with a hard-coded command.
 
-## Next — Verify v1 (make `axle verify` real)
+## Verify v1 — `axle verify` ✅
 
-The pieces the bootstrap deliberately deferred, each behind interfaces that
-already exist:
+Shipped: the flagship "verify an uncommitted change" flow on the Local runtime
+(the brief's Definition of Done).
 
-1. **Change capture** (`packages/git`) — snapshot the current working-tree files
-   (git enumerates them, honouring `.gitignore`), layered with `.axleignore` and a
-   secret denylist, plus `baseSha`/`changedFiles` provenance. The runtime just
-   writes the files — no base tree, no patch apply. See [`plan.md`](plan.md#phase-1--change-capture--axle-verify-local-runtime).
-2. **Project detection + planner** (`packages/planner`) — deterministic Node/TS
-   detection (package manager, scripts, test framework) producing an
-   `ExecutionPlan` (install → typecheck → lint → test → build).
-3. **`axle verify`** — wire capture + planner + execution into the flagship
-   command, with the workspace-analysis output from the product brief.
-4. **Real DockerRuntime** — implement the container lifecycle and a `node-22`
+- **Change capture** (`packages/git`) — snapshot the current working-tree files
+  (git enumerates them, honouring `.gitignore`), layered with `.axleignore` and a
+  secret denylist, plus `baseSha`/`changedFiles` provenance. Scoped to the
+  invocation directory; the runtime just writes the files (no base tree, no patch).
+- **Project detection + planner** (`packages/planner`) — deterministic Node/TS
+  detection producing an `ExecutionPlan` (install → typecheck → lint → test → build).
+- **`axle verify`** — capture + planner + execution wired into the CLI, streaming
+  the plan + live results + structured diagnostics.
+- **`examples/node-typescript`** — a break-a-test demo proving the flow end-to-end.
+
+## Next
+
+1. **Real DockerRuntime** — implement the container lifecycle and a `node-22`
    base image; make it the default when a daemon is available.
-5. **Richer diagnostics** — Jest and Vitest parsers; more artifact types.
-6. **Dashboard** (`apps/web`) — minimal React/Vite execution history + detail.
+2. **Richer diagnostics** — Jest and Vitest parsers (the generic parser already
+   strips ANSI and surfaces the assertion); more artifact types.
+3. **`axle.yaml`** — config overrides for the profile / plan / ignore rules.
+4. **Dashboard** (`apps/web`) — minimal React/Vite execution history + detail.
 
 ## Then — intelligent verification
 

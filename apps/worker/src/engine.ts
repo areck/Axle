@@ -1,7 +1,6 @@
 import type { ArtifactStore } from "@axle/artifacts";
 import {
   type Artifact,
-  DEFAULT_LIMITS,
   type Diagnostic,
   type Execution,
   type ExecutionEvent,
@@ -13,6 +12,7 @@ import {
 import type { DiagnosticsEngine } from "@axle/diagnostics";
 import type { ExecutionStore } from "@axle/persistence";
 import type { ExecutionEnvironment, Runtime } from "@axle/runtime";
+import { OutputCoalescer } from "./output-coalescer";
 
 export interface EngineDeps {
   store: ExecutionStore;
@@ -24,20 +24,28 @@ export interface EngineDeps {
 
 const now = (): string => new Date().toISOString();
 
+/** How often to check for a cancel request while a single step is running. */
+const CANCEL_POLL_MS = 750;
+
+/** Buffer this many bytes of step output before emitting a `step.output` event. */
+const OUTPUT_EVENT_THRESHOLD_BYTES = 16 * 1024;
+
 /**
  * The Execution engine.
  *
  * Given a claimed execution, it provisions an environment, prepares the
  * workspace, runs the plan steps sequentially while streaming structured
  * events, parses diagnostics, collects evidence, persists the result, and — via
- * `finally` — always tears the environment down.
+ * `finally` — always tears the environment down. Resource limits (total time
+ * budget, per-step output cap) come from the {@link Execution} itself, i.e. from
+ * whatever the admission policy decided.
  */
 export class ExecutionEngine {
   constructor(private readonly deps: EngineDeps) {}
 
   async runExecution(execution: Execution): Promise<void> {
     const { store, runtime, diagnostics } = this.deps;
-    const limits = DEFAULT_LIMITS;
+    const limits = execution.limits;
     const totalDeadline = Date.now() + limits.totalTimeoutSeconds * 1000;
     const startedAtMs = Date.now();
 
@@ -54,6 +62,7 @@ export class ExecutionEngine {
     const allDiagnostics: Diagnostic[] = [];
     let failedRequired = false;
     let cancelled = false;
+    let deadlineExceeded = false;
     let failedStepCount = 0;
 
     try {
@@ -79,7 +88,15 @@ export class ExecutionEngine {
         if (!cancelled && (await store.isCancelRequested(execution.id))) {
           cancelled = true;
         }
-        if (cancelled || failedRequired) {
+        if (
+          !cancelled &&
+          !failedRequired &&
+          !deadlineExceeded &&
+          Date.now() >= totalDeadline
+        ) {
+          deadlineExceeded = true;
+        }
+        if (cancelled || failedRequired || deadlineExceeded) {
           await store.updateStep({ ...step, status: "skipped" });
           emit({
             type: "step.completed",
@@ -97,6 +114,8 @@ export class ExecutionEngine {
           (p) => p.id === step.plannedStepId,
         );
         const required = planned?.required ?? true;
+        // Clamp the per-step timeout to the remaining total budget so no single
+        // step can overrun the execution's wall-clock limit.
         const remainingSeconds = Math.ceil((totalDeadline - Date.now()) / 1000);
         const timeoutSeconds = Math.max(
           1,
@@ -120,13 +139,9 @@ export class ExecutionEngine {
         logParts.push(`\n$ ${step.command}\n`);
 
         let output = "";
-        const result = await env.run({
-          command: step.command,
-          timeoutSeconds,
-          maxOutputBytes: limits.maxOutputBytes,
-          onOutput: (chunk) => {
-            output += chunk.data;
-            logParts.push(chunk.data);
+        const coalescer = new OutputCoalescer(
+          OUTPUT_EVENT_THRESHOLD_BYTES,
+          (chunk) => {
             emit({
               type: "step.output",
               executionId: execution.id,
@@ -136,13 +151,55 @@ export class ExecutionEngine {
               at: now(),
             });
           },
-        });
+        );
 
-        const status: ExecutionStepStatus = result.timedOut
+        // Cancellation that arrives mid-step: poll and abort the running command
+        // rather than waiting for the next step boundary.
+        const controller = new AbortController();
+        const cancelPoll = setInterval(() => {
+          void store
+            .isCancelRequested(execution.id)
+            .then((requested) => {
+              if (requested && !cancelled) {
+                cancelled = true;
+                controller.abort();
+              }
+            })
+            .catch(() => {});
+        }, CANCEL_POLL_MS);
+        cancelPoll.unref?.();
+
+        let result: Awaited<ReturnType<ExecutionEnvironment["run"]>>;
+        try {
+          result = await env.run({
+            command: step.command,
+            timeoutSeconds,
+            maxOutputBytes: limits.maxOutputBytes,
+            signal: controller.signal,
+            onOutput: (chunk) => {
+              output += chunk.data;
+              logParts.push(chunk.data);
+              coalescer.push(chunk);
+            },
+          });
+        } finally {
+          clearInterval(cancelPoll);
+          coalescer.flush();
+        }
+
+        // `cancelled` flips to true only if the poll aborted this step.
+        const interrupted = cancelled;
+        let status: ExecutionStepStatus = result.timedOut
           ? "timedOut"
           : result.exitCode === 0
             ? "succeeded"
             : "failed";
+        // A step aborted for cancellation isn't a real failure — record it as
+        // skipped, consistent with the steps that never started.
+        if (interrupted && status !== "succeeded") {
+          status = "skipped";
+        }
+
         const stepEnd = now();
         await store.updateStep({
           ...step,
@@ -164,20 +221,30 @@ export class ExecutionEngine {
           at: stepEnd,
         });
 
-        allDiagnostics.push(
-          ...diagnostics.parseStep({
-            stepId: step.id,
-            name: step.name,
-            command: step.command,
-            output,
-            exitCode: result.exitCode,
-          }),
-        );
-
-        if (status !== "succeeded") {
+        // Diagnostics explain problems, so only parse steps that actually
+        // failed — a succeeded step whose output happens to resemble an error
+        // must not manufacture a false diagnostic.
+        if (status === "failed" || status === "timedOut") {
+          allDiagnostics.push(
+            ...diagnostics.parseStep({
+              stepId: step.id,
+              name: step.name,
+              command: step.command,
+              output,
+              exitCode: result.exitCode,
+            }),
+          );
           failedStepCount += 1;
           if (required) failedRequired = true;
         }
+      }
+
+      if (deadlineExceeded) {
+        allDiagnostics.push({
+          type: "infrastructure",
+          severity: "error",
+          message: `Execution exceeded its ${limits.totalTimeoutSeconds}s total time budget; remaining steps were skipped.`,
+        });
       }
 
       if (allDiagnostics.length > 0) {
@@ -187,7 +254,7 @@ export class ExecutionEngine {
 
       const finalStatus: ExecutionStatus = cancelled
         ? "cancelled"
-        : failedRequired
+        : failedRequired || deadlineExceeded
           ? "failed"
           : "succeeded";
       const completedAt = now();

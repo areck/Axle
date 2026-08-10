@@ -9,6 +9,7 @@ import {
   type ExecutionPolicy,
   type ExecutionStep,
   type ListExecutionsQuery,
+  type ResourceLimits,
   type StoredEvent,
   emptyChangeSnapshot,
   emptyMetrics,
@@ -45,7 +46,7 @@ export class ExecutionService {
     if (!decision.allow) {
       return { ok: false, reasons: decision.reasons ?? ["rejected by policy"] };
     }
-    const execution = buildExecution(request);
+    const execution = buildExecution(request, decision.limits);
     await this.store.createExecution(execution);
     await this.store.appendEvent({
       type: "execution.status",
@@ -86,7 +87,10 @@ export class ExecutionService {
   }
 }
 
-function buildExecution(request: CreateExecutionRequest): Execution {
+function buildExecution(
+  request: CreateExecutionRequest,
+  limits: ResourceLimits,
+): Execution {
   const createdAt = new Date().toISOString();
   const steps: ExecutionStep[] = request.plan.steps.map((planned) => ({
     id: newStepId(),
@@ -108,5 +112,6 @@ function buildExecution(request: CreateExecutionRequest): Execution {
     diagnostics: [],
     artifacts: [],
     metrics: emptyMetrics(),
+    limits,
   };
 }

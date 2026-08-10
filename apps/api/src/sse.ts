@@ -11,13 +11,16 @@ const sleep = (ms: number): Promise<void> =>
  * Stream execution events to a client as Server-Sent Events.
  *
  * Replays history from seq 0, then tails new events until the execution
- * completes or the client disconnects. `fetchSince` is the only dependency, so
- * this helper carries no knowledge of how events are stored.
+ * completes or the client disconnects. Closing is driven primarily by the
+ * `execution.completed` event, with `isComplete` as a fallback: event writes are
+ * fire-and-forget in the worker, so a terminal execution whose completion event
+ * never persisted must still end the stream rather than tail forever.
  */
 export async function streamEvents(
   request: FastifyRequest,
   reply: FastifyReply,
   fetchSince: (sinceSeq: number) => Promise<StoredEvent[]>,
+  isComplete?: () => Promise<boolean>,
 ): Promise<void> {
   reply.hijack();
   const raw = reply.raw;
@@ -46,6 +49,9 @@ export async function streamEvents(
     }
     if (closed) break;
     if (events.length === 0) {
+      // Caught up: if the execution has reached a terminal state, stop even
+      // though no completion event arrived.
+      if (isComplete && (await isComplete())) break;
       idleTicks += 1;
       if (idleTicks % HEARTBEAT_TICKS === 0) raw.write(": ping\n\n");
     } else {

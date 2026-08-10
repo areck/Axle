@@ -26,7 +26,31 @@ export function openDatabase(dbPath: string): DatabaseSync {
   db.exec("PRAGMA busy_timeout = 5000;");
   db.exec("PRAGMA foreign_keys = ON;");
   db.exec(SCHEMA);
+  migrate(db);
   return db;
+}
+
+/**
+ * Forward-only migrations for databases created by an earlier schema. `SCHEMA`
+ * is `CREATE TABLE IF NOT EXISTS`, so columns added to an existing table land
+ * here as idempotent `ADD COLUMN`s rather than in the create statement.
+ */
+function migrate(db: DatabaseSync): void {
+  ensureColumn(db, "executions", "limits_json", "TEXT");
+}
+
+/** Add `column` to `table` if it isn't already present. */
+function ensureColumn(
+  db: DatabaseSync,
+  table: string,
+  column: string,
+  type: string,
+): void {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as {
+    name: string;
+  }[];
+  if (columns.some((c) => c.name === column)) return;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
 }
 
 export type Database = DatabaseSync;

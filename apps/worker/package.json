@@ -19,5 +19,9 @@
     "@axle/runtime": "workspace:*",
     "@axle/runtime-docker": "workspace:*",
     "@axle/runtime-local": "workspace:*"
+  },
+  "devDependencies": {
+    "@axle/git": "workspace:*",
+    "@axle/planner": "workspace:*"
   }
 }

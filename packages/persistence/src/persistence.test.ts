@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
+  DEFAULT_LIMITS,
   DEFAULT_PROFILE,
   type Execution,
   emptyChangeSnapshot,
@@ -71,6 +72,7 @@ function queuedExecution(): Execution {
     diagnostics: [],
     artifacts: [],
     metrics: emptyMetrics(),
+    limits: DEFAULT_LIMITS,
   };
 }
 
@@ -82,6 +84,58 @@ describe("SqliteExecutionStore", () => {
     expect(fetched?.status).toBe("queued");
     expect(fetched?.steps).toHaveLength(2);
     expect(fetched?.steps[0]?.name).toBe("install");
+  });
+
+  it("round-trips the resource limits set by policy", async () => {
+    const execution = queuedExecution();
+    execution.limits = {
+      cpu: 8,
+      memoryMb: 16384,
+      totalTimeoutSeconds: 60,
+      maxOutputBytes: 123,
+    };
+    await store.createExecution(execution);
+    const fetched = await store.getExecution(execution.id);
+    expect(fetched?.limits).toEqual(execution.limits);
+  });
+
+  it("migrates a pre-`limits_json` database and backfills defaults", async () => {
+    // Simulate a DB created by the earlier schema: an executions table with no
+    // limits_json column and one legacy row.
+    const legacyPath = path.join(dir, "legacy.db");
+    const sqlite = process.getBuiltinModule("node:sqlite");
+    const legacy = new sqlite.DatabaseSync(legacyPath);
+    legacy.exec(`CREATE TABLE executions (
+      id TEXT PRIMARY KEY, status TEXT NOT NULL, intent TEXT,
+      repository_json TEXT NOT NULL, change_json TEXT NOT NULL,
+      profile_json TEXT NOT NULL, plan_json TEXT NOT NULL,
+      metrics_json TEXT NOT NULL, cancel_requested INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL, started_at TEXT, completed_at TEXT)`);
+    legacy
+      .prepare(
+        `INSERT INTO executions
+          (id, status, repository_json, change_json, profile_json, plan_json,
+           metrics_json, created_at)
+         VALUES ('exec_legacy', 'succeeded', ?, ?, ?, ?, ?, '2020-01-01')`,
+      )
+      .run(
+        JSON.stringify({ name: "legacy" }),
+        JSON.stringify(emptyChangeSnapshot()),
+        JSON.stringify(DEFAULT_PROFILE),
+        JSON.stringify({ profile: "node-22", steps: [] }),
+        JSON.stringify(emptyMetrics()),
+      );
+    legacy.close();
+
+    // Opening through the store runs the forward migration.
+    const migrated = new SqliteExecutionStore(legacyPath);
+    try {
+      const fetched = await migrated.getExecution("exec_legacy");
+      expect(fetched?.repository.name).toBe("legacy");
+      expect(fetched?.limits).toEqual(DEFAULT_LIMITS);
+    } finally {
+      migrated.close();
+    }
   });
 
   it("lists executions", async () => {

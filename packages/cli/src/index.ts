@@ -5,6 +5,7 @@ import {
   executionsCommand,
   inspectCommand,
   runCommand,
+  verifyCommand,
 } from "./commands";
 import { fail } from "./ui";
 
@@ -32,6 +33,28 @@ async function main(): Promise<void> {
       const api = thisCommand.optsWithGlobals().api as string;
       await runCommand(command, {
         api,
+        profile: options.profile,
+        timeout: Number(options.timeout),
+        intent: options.intent,
+        json: Boolean(options.json),
+      });
+    });
+
+  program
+    .command("verify")
+    .description(
+      "Capture the working tree, plan verification, and run it in isolation",
+    )
+    .option("--command <command>", "run a single command instead of a plan")
+    .option("--profile <name>", "execution profile", "node-22")
+    .option("--timeout <seconds>", "per-step timeout in seconds", "600")
+    .option("--intent <text>", "why you are verifying")
+    .option("--json", "print the final execution as JSON", false)
+    .action(async (options, thisCommand) => {
+      const api = thisCommand.optsWithGlobals().api as string;
+      await verifyCommand({
+        api,
+        command: options.command,
         profile: options.profile,
         timeout: Number(options.timeout),
         intent: options.intent,
