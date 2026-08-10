@@ -10,13 +10,15 @@ contaminating the developer's local machine.
 Long term, Axle helps agents **organize, plan, verify, review, and ship**
 software.
 
-> **Status — bootstrap pass 1.** This repository proves the core primitive: an
-> agent can hand Axle a command, Axle runs it somewhere clean, and the agent
-> gets back trustworthy structured evidence. It ships the domain contracts, the
-> runtime abstraction with a working **LocalRuntime**, a control-plane API, an
-> execution worker, and a CLI. Git change-capture, the verification planner,
-> `axle verify`, the real Docker runtime, and the dashboard are scoped as the
-> next passes (see [`docs/roadmap.md`](docs/roadmap.md)).
+> **Status.** This repository proves the core primitive and the flagship flow:
+> an agent hands Axle an uncommitted change, Axle captures it, runs a
+> verification plan somewhere clean, and the agent gets back trustworthy
+> structured evidence. It ships the domain contracts, the runtime abstraction
+> with a working **LocalRuntime**, a control-plane API, an execution worker, the
+> CLI, **`axle verify`** with change-capture + planner, and **`axle.yaml`** /
+> **`axle init`** for explicit, agent-authored verification config. The real
+> Docker runtime, richer diagnostics, and the dashboard are the next passes (see
+> [`docs/roadmap.md`](docs/roadmap.md)).
 
 ---
 
@@ -153,7 +155,8 @@ pnpm axle executions                   # recent history
 
 | Command | Description |
 | --- | --- |
-| `axle verify` | Capture the working tree, plan verification (install → typecheck → lint → test → build), and run it in isolation. |
+| `axle verify` | Capture the working tree, plan verification (from `axle.yaml`, or auto-detected: install → typecheck → lint → test → build), and run it in isolation. |
+| `axle init` | Configure `axle.yaml`: print a prompt for your coding agent to author it, or `--write` a detected scaffold. |
 | `axle run "<command>"` | Run a single command in an isolated execution and stream structured evidence. |
 | `axle inspect <id>` | Show the full record for an execution (steps, diagnostics, artifacts, timing). |
 | `axle executions` | List recent execution history. |
@@ -165,12 +168,40 @@ Global: `--api <url>` (defaults to `AXLE_API_URL` / `http://127.0.0.1:8787`).
 ### `axle verify`
 
 Run inside a project directory (it captures that project — even a subdirectory
-of a monorepo). Axle reads the uncommitted working tree, detects the package
-manager / scripts / TypeScript, plans a verification, and runs it in a clean
-sandbox. See [`examples/node-typescript`](examples/node-typescript) for a
-break-a-test demo. `--command "<cmd>"` runs a single command instead of a plan.
+of a monorepo). Axle reads the uncommitted working tree, resolves a verification
+plan, and runs it in a clean sandbox. See
+[`examples/node-typescript`](examples/node-typescript) for a break-a-test demo.
 Secrets are excluded by default (`.gitignore` + `.axleignore` + a built-in
 denylist); nothing is committed or pushed.
+
+The plan is chosen in precedence order: `--command "<cmd>"` (a single command) →
+a project **`axle.yaml`** → auto-detection (package manager / scripts /
+TypeScript).
+
+### `axle.yaml`
+
+Declare exactly how a project is verified, instead of relying on auto-detection.
+Because it is explicit, it also lets projects Axle can't yet auto-detect (any
+language, custom pipelines) verify too.
+
+```yaml
+profile: node-22          # execution environment
+steps:                    # ordered; each runs in the clean workspace
+  - name: install
+    command: npm ci
+  - name: test
+    command: npm test     # required by default — a failure fails verification
+  - name: e2e
+    command: pnpm playwright test
+    required: false       # non-blocking
+    timeoutSeconds: 1800
+```
+
+Since Axle Verify runs inside a coding agent's workflow, the fastest way to a
+correct file is to let the agent write it: **`axle init`** prints a precise
+prompt (with an auto-detected starting point) for the enclosing agent to inspect
+the repo and author `axle.yaml`. Prefer a deterministic scaffold instead?
+`axle init --write` drops one to disk (`--force` to overwrite).
 
 ## How it works
 

@@ -36,14 +36,27 @@ Shipped: the flagship "verify an uncommitted change" flow on the Local runtime
   the plan + live results + structured diagnostics.
 - **`examples/node-typescript`** — a break-a-test demo proving the flow end-to-end.
 
+## Verify v2 — `axle.yaml` + agentic `axle init` ✅
+
+Shipped: explicit, per-project verification config, plus an agent-first way to
+author it.
+
+- **`axle.yaml`** (`VerifyConfig` contract + `packages/planner` loader) — declare
+  the ordered steps to run; when present it replaces auto-detection. Because it is
+  explicit, projects Axle can't yet auto-detect (any language, custom pipelines)
+  can verify too. `verify` precedence: `--command` → `axle.yaml` → auto-detect.
+- **`axle init`** — since Verify runs inside a coding agent's workflow, this prints
+  a precise prompt (with an auto-detected starting point) for the enclosing agent
+  to inspect the repo and write `axle.yaml`. `--write` drops a deterministic
+  scaffold instead.
+
 ## Next
 
 1. **Real DockerRuntime** — implement the container lifecycle and a `node-22`
    base image; make it the default when a daemon is available.
 2. **Richer diagnostics** — Jest and Vitest parsers (the generic parser already
    strips ANSI and surfaces the assertion); more artifact types.
-3. **`axle.yaml`** — config overrides for the profile / plan / ignore rules.
-4. **Dashboard** (`apps/web`) — minimal React/Vite execution history + detail.
+3. **Dashboard** (`apps/web`) — minimal React/Vite execution history + detail.
 
 ## Then — intelligent verification
 
