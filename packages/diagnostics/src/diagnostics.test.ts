@@ -7,9 +7,7 @@ function ctx(partial: Partial<ParseContext>): ParseContext {
     stepId: "step_1",
     name: "step",
     command: "",
-    stdout: "",
-    stderr: "",
-    combined: "",
+    output: "",
     exitCode: 0,
     ...partial,
   };
@@ -25,8 +23,7 @@ describe("DiagnosticsEngine", () => {
       ctx({
         name: "typecheck",
         command: "tsc --noEmit",
-        combined: output,
-        stdout: output,
+        output,
         exitCode: 2,
       }),
     );
@@ -47,7 +44,7 @@ describe("DiagnosticsEngine", () => {
       ctx({
         name: "test",
         command: "npm test",
-        combined: "FAIL src/auth/auth.test.ts\nboom: expected 401 received 500",
+        output: "FAIL src/auth/auth.test.ts\nboom: expected 401 received 500",
         exitCode: 1,
       }),
     );
@@ -58,7 +55,7 @@ describe("DiagnosticsEngine", () => {
 
   it("produces no diagnostics for a successful step", () => {
     const diagnostics = engine.parseStep(
-      ctx({ name: "test", combined: "ok", exitCode: 0 }),
+      ctx({ name: "test", output: "ok", exitCode: 0 }),
     );
     expect(diagnostics).toEqual([]);
   });

@@ -119,17 +119,13 @@ export class ExecutionEngine {
         });
         logParts.push(`\n$ ${step.command}\n`);
 
-        let stdout = "";
-        let stderr = "";
-        let combined = "";
+        let output = "";
         const result = await env.run({
           command: step.command,
           timeoutSeconds,
           maxOutputBytes: limits.maxOutputBytes,
           onOutput: (chunk) => {
-            combined += chunk.data;
-            if (chunk.stream === "stdout") stdout += chunk.data;
-            else stderr += chunk.data;
+            output += chunk.data;
             logParts.push(chunk.data);
             emit({
               type: "step.output",
@@ -173,9 +169,7 @@ export class ExecutionEngine {
             stepId: step.id,
             name: step.name,
             command: step.command,
-            stdout,
-            stderr,
-            combined,
+            output,
             exitCode: result.exitCode,
           }),
         );

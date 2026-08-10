@@ -18,7 +18,7 @@ export class GenericParser implements DiagnosticParser {
   }
 
   parse(ctx: ParseContext): Diagnostic[] {
-    const lines = ctx.combined
+    const lines = ctx.output
       .split(/\r?\n/)
       .map((l) => l.trimEnd())
       .filter((l) => l.trim().length > 0);

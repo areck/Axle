@@ -12,13 +12,13 @@ export class TypeScriptParser implements DiagnosticParser {
 
   applies(ctx: ParseContext): boolean {
     TS_ERROR.lastIndex = 0;
-    return TS_ERROR.test(ctx.combined);
+    return TS_ERROR.test(ctx.output);
   }
 
   parse(ctx: ParseContext): Diagnostic[] {
     const diagnostics: Diagnostic[] = [];
     TS_ERROR.lastIndex = 0;
-    for (const match of ctx.combined.matchAll(TS_ERROR)) {
+    for (const match of ctx.output.matchAll(TS_ERROR)) {
       const [line, file, lineNo, colNo, code, message] = match;
       diagnostics.push({
         id: newDiagnosticId(),

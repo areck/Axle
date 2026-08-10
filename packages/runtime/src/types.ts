@@ -11,8 +11,6 @@ export interface RuntimeRequest {
   limits: ResourceLimits;
   /** Environment variables to expose inside the environment (allowlisted). */
   env?: Record<string, string>;
-  /** Free-form labels for observability. */
-  labels?: Record<string, string>;
 }
 
 export interface OutputChunk {
@@ -33,8 +31,6 @@ export interface CommandRequest {
   maxOutputBytes: number;
   /** Called for each chunk of streamed output. */
   onOutput?: (chunk: OutputChunk) => void;
-  /** Cooperative cancellation. */
-  signal?: AbortSignal;
 }
 
 export interface CommandResult {
@@ -44,16 +40,4 @@ export interface CommandResult {
   durationMs: number;
   outputBytes: number;
   truncated: boolean;
-}
-
-/**
- * An artifact discovered inside an environment, referenced by a host-visible
- * path so the application layer can persist it via an ArtifactStore.
- */
-export interface CollectedArtifact {
-  type: string;
-  name: string;
-  mimeType?: string;
-  /** Absolute path on the host where the artifact content currently lives. */
-  path: string;
 }

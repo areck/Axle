@@ -8,10 +8,8 @@ export interface ParseContext {
   /** Step name, e.g. "typecheck", "test", "install". */
   name: string;
   command: string;
-  stdout: string;
-  stderr: string;
-  /** stdout + stderr interleaved in the order it was produced. */
-  combined: string;
+  /** The step's combined stdout + stderr, in the order it was produced. */
+  output: string;
   exitCode: number | null;
 }
 

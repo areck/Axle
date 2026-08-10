@@ -1,9 +1,9 @@
 import { LocalArtifactStore } from "@axle/artifacts";
-import { resolveConfig } from "@axle/config";
+import { type RuntimeSelection, resolveConfig } from "@axle/config";
 import type { Execution } from "@axle/contracts";
 import { DiagnosticsEngine } from "@axle/diagnostics";
 import { SqliteExecutionStore } from "@axle/persistence";
-import { RuntimeRegistry } from "@axle/runtime";
+import type { Runtime } from "@axle/runtime";
 import { DockerRuntime } from "@axle/runtime-docker";
 import { LocalRuntime } from "@axle/runtime-local";
 import { ExecutionEngine } from "./engine";
@@ -12,17 +12,29 @@ const POLL_INTERVAL_MS = 250;
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
+/** Prefer stronger isolation (Docker) and fall back to Local when it isn't there. */
+async function selectRuntime(preference: RuntimeSelection): Promise<Runtime> {
+  const local = new LocalRuntime();
+  if (preference === "local") return local;
+
+  const docker = new DockerRuntime();
+  if (await docker.isAvailable()) return docker;
+  if (preference === "docker") {
+    throw new Error(
+      "Docker is not available. Start it, or set AXLE_RUNTIME=local.",
+    );
+  }
+  return local;
+}
+
 async function main(): Promise<void> {
   const config = resolveConfig();
   const store = new SqliteExecutionStore(config.dbPath);
   const artifacts = new LocalArtifactStore(config.artifactsDir);
-  const registry = new RuntimeRegistry()
-    .register(new DockerRuntime())
-    .register(new LocalRuntime());
 
   const log = (message: string): void => console.log(`[worker] ${message}`);
 
-  const runtime = await registry.select(config.runtime);
+  const runtime = await selectRuntime(config.runtime);
   if (runtime.name === "local") {
     console.warn(
       "[worker] Using LocalRuntime — NO isolation. For local development only.",

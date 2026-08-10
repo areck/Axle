@@ -1,10 +1,5 @@
 import type { ChangeSnapshot } from "@axle/contracts";
-import type {
-  CollectedArtifact,
-  CommandRequest,
-  CommandResult,
-  RuntimeRequest,
-} from "./types";
+import type { CommandRequest, CommandResult, RuntimeRequest } from "./types";
 
 /**
  * A provider capable of creating isolated execution environments.
@@ -23,8 +18,8 @@ export interface Runtime {
 /**
  * A single, ephemeral place to prepare a workspace and run commands.
  *
- * Lifecycle: create -> prepareWorkspace -> run* -> collectArtifacts -> destroy.
- * `destroy()` must always be called (the engine guarantees it with `finally`).
+ * Lifecycle: create -> prepareWorkspace -> run* -> destroy. `destroy()` must
+ * always be called (the engine guarantees it with `finally`).
  */
 export interface ExecutionEnvironment {
   readonly id: string;
@@ -32,8 +27,6 @@ export interface ExecutionEnvironment {
   prepareWorkspace(snapshot: ChangeSnapshot): Promise<void>;
   /** Run a single command, streaming output via `onOutput`. */
   run(command: CommandRequest): Promise<CommandResult>;
-  /** Gather requested output files as artifacts. */
-  collectArtifacts(): Promise<CollectedArtifact[]>;
   /** Tear down the environment and release all resources. */
   destroy(): Promise<void>;
 }
@@ -42,15 +35,5 @@ export class NotImplementedError extends Error {
   constructor(feature: string) {
     super(`${feature} is not implemented yet`);
     this.name = "NotImplementedError";
-  }
-}
-
-export class RuntimeUnavailableError extends Error {
-  constructor(
-    public readonly runtimeName: string,
-    message: string,
-  ) {
-    super(message);
-    this.name = "RuntimeUnavailableError";
   }
 }

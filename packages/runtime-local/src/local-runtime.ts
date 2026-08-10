@@ -5,7 +5,6 @@ import os from "node:os";
 import path from "node:path";
 import type { ChangeSnapshot } from "@axle/contracts";
 import type {
-  CollectedArtifact,
   CommandRequest,
   CommandResult,
   ExecutionEnvironment,
@@ -48,12 +47,6 @@ class LocalExecutionEnvironment implements ExecutionEnvironment {
 
   async run(command: CommandRequest): Promise<CommandResult> {
     return this.spawn(command);
-  }
-
-  async collectArtifacts(): Promise<CollectedArtifact[]> {
-    // The engine writes the execution.log artifact directly. Collecting build
-    // outputs / reports from the workspace arrives in a later pass.
-    return [];
   }
 
   async destroy(): Promise<void> {
@@ -136,15 +129,11 @@ class LocalExecutionEnvironment implements ExecutionEnvironment {
       }, command.timeoutSeconds * 1000);
       timer.unref?.();
 
-      const onAbort = () => escalate();
-      command.signal?.addEventListener("abort", onAbort, { once: true });
-
       const finish = (exitCode: number | null) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
         if (escalationTimer) clearTimeout(escalationTimer);
-        command.signal?.removeEventListener("abort", onAbort);
         resolve({
           exitCode,
           timedOut,

@@ -3,7 +3,6 @@ import {
   ChangeSnapshotSchema,
   ExecutionPlanSchema,
   ExecutionProfileSchema,
-  ExecutionSchema,
   ExecutionStatusSchema,
   RepositoryRefSchema,
 } from "./domain";
@@ -50,14 +49,3 @@ export const ExecutionListResponseSchema = z.object({
   total: z.number().int().nonnegative(),
 });
 export type ExecutionListResponse = z.infer<typeof ExecutionListResponseSchema>;
-
-export const CreateExecutionResponseSchema = ExecutionSchema;
-export type CreateExecutionResponse = z.infer<
-  typeof CreateExecutionResponseSchema
->;
-
-export const ErrorResponseSchema = z.object({
-  error: z.string(),
-  details: z.unknown().optional(),
-});
-export type ErrorResponse = z.infer<typeof ErrorResponseSchema>;

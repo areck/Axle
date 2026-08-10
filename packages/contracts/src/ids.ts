@@ -8,25 +8,18 @@ import { ulid } from "ulid";
  * that will later power Axle Graph).
  */
 
-export const ID_PREFIXES = {
-  execution: "exec",
-  step: "step",
-  artifact: "art",
-  diagnostic: "diag",
-} as const;
-
 export function newExecutionId(): string {
-  return `${ID_PREFIXES.execution}_${ulid()}`;
+  return `exec_${ulid()}`;
 }
 
 export function newStepId(): string {
-  return `${ID_PREFIXES.step}_${ulid()}`;
+  return `step_${ulid()}`;
 }
 
 export function newArtifactId(): string {
-  return `${ID_PREFIXES.artifact}_${ulid()}`;
+  return `art_${ulid()}`;
 }
 
 export function newDiagnosticId(): string {
-  return `${ID_PREFIXES.diagnostic}_${ulid()}`;
+  return `diag_${ulid()}`;
 }
