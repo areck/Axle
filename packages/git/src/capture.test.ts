@@ -74,4 +74,52 @@ describe("captureWorkspace", () => {
     expect(changed.some((p) => p.includes("index.ts"))).toBe(true);
     expect(changed.some((p) => p.includes("extra.ts"))).toBe(true);
   });
+
+  it("captures files larger than 1 MiB (no silent per-file drop)", async () => {
+    const bigPath = path.join(dir, "big.txt");
+    await fs.writeFile(bigPath, "x".repeat(1_500_000));
+    try {
+      const snapshot = await captureWorkspace(dir);
+      const big = snapshot.files.find((f) => f.path === "big.txt");
+      expect(big?.sizeBytes).toBe(1_500_000);
+    } finally {
+      await fs.rm(bigPath);
+    }
+  });
+
+  it("scopes capture to the invocation subtree in a larger repo", async () => {
+    // A repo with a nested project, mimicking `examples/*` inside the monorepo.
+    const repo = await fs.mkdtemp(path.join(os.tmpdir(), "axle-sub-"));
+    try {
+      await execFileAsync("git", ["init", "-q"], { cwd: repo });
+      await execFileAsync("git", ["config", "user.email", "t@axle.dev"], {
+        cwd: repo,
+      });
+      await execFileAsync("git", ["config", "user.name", "T"], { cwd: repo });
+      await fs.writeFile(path.join(repo, "root.ts"), "export const r = 1;\n");
+      await fs.mkdir(path.join(repo, "project"), { recursive: true });
+      await fs.writeFile(
+        path.join(repo, "project/app.ts"),
+        "export const a = 1;\n",
+      );
+      await execFileAsync("git", ["add", "."], { cwd: repo });
+      await execFileAsync("git", ["commit", "-q", "-m", "init"], { cwd: repo });
+
+      // Uncommitted edits both outside and inside the nested project.
+      await fs.writeFile(path.join(repo, "root.ts"), "export const r = 2;\n");
+      await fs.writeFile(
+        path.join(repo, "project/app.ts"),
+        "export const a = 2;\n",
+      );
+
+      const snapshot = await captureWorkspace(path.join(repo, "project"));
+      const paths = snapshot.files.map((f) => f.path);
+      expect(paths).toEqual(["app.ts"]); // only the subtree, no root.ts
+      // changedFiles is scoped AND cwd-relative — "app.ts", not
+      // "project/app.ts", and no unrelated "root.ts".
+      expect(snapshot.changedFiles.map((c) => c.path)).toEqual(["app.ts"]);
+    } finally {
+      await fs.rm(repo, { recursive: true, force: true });
+    }
+  });
 });

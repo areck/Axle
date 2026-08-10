@@ -5,10 +5,15 @@ import type {
   ChangedFile,
   SnapshotFile,
 } from "@axle/contracts";
-import { headSha, isGitRepo, listFiles, statusPorcelain } from "./git";
+import {
+  headSha,
+  isGitRepo,
+  listFiles,
+  showPrefix,
+  statusPorcelain,
+} from "./git";
 import { buildIgnoreFilter } from "./ignore";
 
-const PER_FILE_MAX_BYTES = 1024 * 1024; // 1 MiB — skip large blobs
 const TOTAL_MAX_BYTES = 20 * 1024 * 1024; // 20 MiB — under the API's 25 MB body limit
 const MAX_FILES = 5000;
 
@@ -45,13 +50,15 @@ export async function captureWorkspace(cwd: string): Promise<ChangeSnapshot> {
     } catch {
       continue; // deleted or unreadable — reproduce as absent
     }
-    if (!stat.isFile() || stat.size > PER_FILE_MAX_BYTES) continue;
+    if (!stat.isFile()) continue; // directories, sockets, etc.
 
+    // No per-file cap: dropping a file silently would run verification against
+    // an incomplete workspace. The total cap below fails loudly instead.
     totalBytes += stat.size;
     if (totalBytes > TOTAL_MAX_BYTES) {
       const limitMiB = TOTAL_MAX_BYTES / (1024 * 1024);
       throw new Error(
-        `Workspace snapshot exceeds ${limitMiB} MiB. Add a .axleignore to exclude large or generated files.`,
+        `Workspace snapshot exceeds ${limitMiB} MiB (at ${rel}). Add a .axleignore to exclude large or generated files.`,
       );
     }
 
@@ -64,29 +71,41 @@ export async function captureWorkspace(cwd: string): Promise<ChangeSnapshot> {
     });
   }
 
-  const changedFiles = parseChangedFiles(await statusPorcelain(cwd));
+  const [porcelain, prefix] = await Promise.all([
+    statusPorcelain(cwd),
+    showPrefix(cwd),
+  ]);
+  const changedFiles = parseChangedFiles(porcelain, prefix);
   return { baseSha, changedFiles, files };
 }
 
-function parseChangedFiles(porcelain: string): ChangedFile[] {
+/**
+ * Parse `git status --porcelain` lines into {@link ChangedFile}s. `prefix` is
+ * the cwd's path from the repo root (with trailing slash); porcelain paths are
+ * repo-root-relative, so stripping it yields cwd-relative paths consistent with
+ * the captured `files`.
+ */
+function parseChangedFiles(porcelain: string, prefix: string): ChangedFile[] {
+  const strip = (p: string): string =>
+    prefix && p.startsWith(prefix) ? p.slice(prefix.length) : p;
   const changed: ChangedFile[] = [];
   for (const line of porcelain.split("\n")) {
     if (line.length < 4) continue;
     const code = line[0] === " " ? line[1] : line[0];
     const rest = line.slice(3);
     if (code === "?" || code === "A") {
-      changed.push({ path: rest, changeType: "added" });
+      changed.push({ path: strip(rest), changeType: "added" });
     } else if (code === "D") {
-      changed.push({ path: rest, changeType: "deleted" });
+      changed.push({ path: strip(rest), changeType: "deleted" });
     } else if (code === "R") {
       const [oldPath, newPath] = rest.split(" -> ");
       changed.push({
-        path: newPath ?? rest,
+        path: strip(newPath ?? rest),
         changeType: "renamed",
-        oldPath,
+        oldPath: oldPath ? strip(oldPath) : undefined,
       });
     } else {
-      changed.push({ path: rest, changeType: "modified" });
+      changed.push({ path: strip(rest), changeType: "modified" });
     }
   }
   return changed;
