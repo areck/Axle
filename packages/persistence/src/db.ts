@@ -10,9 +10,8 @@ import { SCHEMA } from "./schema";
  * runtime via `process.getBuiltinModule` (Node 22.3+), leaving no static import
  * for a bundler to see. The type still comes from `@types/node`.
  */
-const sqlite = process.getBuiltinModule(
-  "node:sqlite",
-) as typeof import("node:sqlite");
+type SqliteModule = typeof import("node:sqlite");
+const sqlite = process.getBuiltinModule("node:sqlite") as SqliteModule;
 
 /**
  * Open (creating if necessary) the Axle SQLite database.

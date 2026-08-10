@@ -221,7 +221,8 @@ pnpm dev          # API + worker (watch mode)
 pnpm build        # build every package/app
 pnpm test         # run the vitest suite
 pnpm typecheck    # tsc --noEmit across the monorepo
-pnpm lint         # eslint
+pnpm lint         # biome check (lint + format + import order)
+pnpm format       # biome check --write (apply fixes)
 pnpm axle <cmd>   # run the CLI
 ```
 

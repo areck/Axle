@@ -1,9 +1,9 @@
-import { LocalArtifactStore } from "@axle/artifacts";
-import { SqliteExecutionStore } from "@axle/persistence";
-import type { FastifyInstance } from "fastify";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { LocalArtifactStore } from "@axle/artifacts";
+import { SqliteExecutionStore } from "@axle/persistence";
+import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AllowAllPolicy } from "./policy";
 import { buildServer } from "./server";

@@ -20,7 +20,9 @@ export const CreateExecutionRequestSchema = z.object({
   profile: ExecutionProfileSchema.optional(),
   plan: ExecutionPlanSchema,
 });
-export type CreateExecutionRequest = z.infer<typeof CreateExecutionRequestSchema>;
+export type CreateExecutionRequest = z.infer<
+  typeof CreateExecutionRequestSchema
+>;
 
 export const ListExecutionsQuerySchema = z.object({
   status: ExecutionStatusSchema.optional(),

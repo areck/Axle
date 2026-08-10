@@ -24,9 +24,13 @@ export class DockerRuntime implements Runtime {
 
   async isAvailable(): Promise<boolean> {
     try {
-      await execFileAsync("docker", ["info", "--format", "{{.ServerVersion}}"], {
-        timeout: 5000,
-      });
+      await execFileAsync(
+        "docker",
+        ["info", "--format", "{{.ServerVersion}}"],
+        {
+          timeout: 5000,
+        },
+      );
       return true;
     } catch {
       return false;

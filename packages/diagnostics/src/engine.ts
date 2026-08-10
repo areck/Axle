@@ -1,7 +1,7 @@
 import type { Diagnostic } from "@axle/contracts";
 import { GenericParser } from "./generic-parser";
-import { TypeScriptParser } from "./typescript-parser";
 import type { DiagnosticParser, ParseContext } from "./types";
+import { TypeScriptParser } from "./typescript-parser";
 
 /**
  * Runs the registered parsers over a step's output and produces normalized

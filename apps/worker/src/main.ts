@@ -1,5 +1,6 @@
 import { LocalArtifactStore } from "@axle/artifacts";
 import { resolveConfig } from "@axle/config";
+import type { Execution } from "@axle/contracts";
 import { DiagnosticsEngine } from "@axle/diagnostics";
 import { SqliteExecutionStore } from "@axle/persistence";
 import { RuntimeRegistry } from "@axle/runtime";
@@ -45,7 +46,7 @@ async function main(): Promise<void> {
   process.on("SIGTERM", stop);
 
   while (running) {
-    let execution;
+    let execution: Execution | undefined;
     try {
       execution = await store.claimNextQueued();
     } catch (error) {

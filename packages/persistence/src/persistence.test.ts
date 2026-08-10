@@ -1,3 +1,6 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import {
   DEFAULT_PROFILE,
   type Execution,
@@ -6,9 +9,6 @@ import {
   newExecutionId,
   newStepId,
 } from "@axle/contracts";
-import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { SqliteExecutionStore } from "./execution-store";
 

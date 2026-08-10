@@ -1,3 +1,6 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { LocalArtifactStore } from "@axle/artifacts";
 import {
   DEFAULT_PROFILE,
@@ -11,9 +14,6 @@ import {
 import { DiagnosticsEngine } from "@axle/diagnostics";
 import { SqliteExecutionStore } from "@axle/persistence";
 import { LocalRuntime } from "@axle/runtime-local";
-import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ExecutionEngine } from "./engine";
 
@@ -103,7 +103,9 @@ describe("ExecutionEngine (end-to-end)", () => {
 
     // Structured diagnostics — not raw terminal output.
     expect(final.diagnostics.length).toBeGreaterThanOrEqual(1);
-    expect(final.diagnostics.some((d) => d.message.includes("boom"))).toBe(true);
+    expect(final.diagnostics.some((d) => d.message.includes("boom"))).toBe(
+      true,
+    );
 
     // Evidence artifact.
     expect(final.artifacts.some((a) => a.name === "execution.log")).toBe(true);

@@ -39,7 +39,10 @@ export interface ExecutionStore {
   addArtifact(artifact: Artifact): Promise<void>;
   /** Append an event; returns its monotonic sequence number. */
   appendEvent(event: ExecutionEvent): Promise<number>;
-  listEventsSince(executionId: string, sinceSeq: number): Promise<StoredEvent[]>;
+  listEventsSince(
+    executionId: string,
+    sinceSeq: number,
+  ): Promise<StoredEvent[]>;
   requestCancel(id: string): Promise<boolean>;
   isCancelRequested(id: string): Promise<boolean>;
   /**

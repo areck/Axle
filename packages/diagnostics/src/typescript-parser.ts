@@ -1,4 +1,4 @@
-import { newDiagnosticId, type Diagnostic } from "@axle/contracts";
+import { type Diagnostic, newDiagnosticId } from "@axle/contracts";
 import type { DiagnosticParser, ParseContext } from "./types";
 
 // Matches: src/foo.ts(18,7): error TS2322: Type 'x' is not assignable to 'y'.

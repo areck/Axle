@@ -104,7 +104,11 @@ export class ExecutionEngine {
         );
 
         const stepStart = now();
-        await store.updateStep({ ...step, status: "running", startedAt: stepStart });
+        await store.updateStep({
+          ...step,
+          status: "running",
+          startedAt: stepStart,
+        });
         emit({
           type: "step.started",
           executionId: execution.id,

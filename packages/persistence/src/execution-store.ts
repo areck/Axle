@@ -209,12 +209,7 @@ export class SqliteExecutionStore implements ExecutionStore {
         `INSERT INTO execution_events (execution_id, type, payload_json, created_at)
          VALUES (?, ?, ?, ?)`,
       )
-      .run(
-        event.executionId,
-        event.type,
-        JSON.stringify(event),
-        event.at,
-      );
+      .run(event.executionId, event.type, JSON.stringify(event), event.at);
     return Number(result.lastInsertRowid);
   }
 
@@ -290,13 +285,17 @@ export class SqliteExecutionStore implements ExecutionStore {
 
     const diagnostics: Diagnostic[] = (
       this.db
-        .prepare(`SELECT * FROM diagnostics WHERE execution_id = ? ORDER BY rowid ASC`)
+        .prepare(
+          `SELECT * FROM diagnostics WHERE execution_id = ? ORDER BY rowid ASC`,
+        )
         .all(row.id) as any[]
     ).map(rowToDiagnostic);
 
     const artifacts: Artifact[] = (
       this.db
-        .prepare(`SELECT * FROM artifacts WHERE execution_id = ? ORDER BY rowid ASC`)
+        .prepare(
+          `SELECT * FROM artifacts WHERE execution_id = ? ORDER BY rowid ASC`,
+        )
         .all(row.id) as any[]
     ).map(rowToArtifact);
 
