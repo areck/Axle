@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS executions (
   profile_json TEXT NOT NULL,
   plan_json TEXT NOT NULL,
   metrics_json TEXT NOT NULL,
+  limits_json TEXT,
   cancel_requested INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   started_at TEXT,

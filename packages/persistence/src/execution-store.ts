@@ -1,14 +1,15 @@
-import type {
-  Artifact,
-  Diagnostic,
-  Execution,
-  ExecutionEvent,
-  ExecutionListResponse,
-  ExecutionStatus,
-  ExecutionStep,
-  ExecutionSummary,
-  ListExecutionsQuery,
-  StoredEvent,
+import {
+  type Artifact,
+  DEFAULT_LIMITS,
+  type Diagnostic,
+  type Execution,
+  type ExecutionEvent,
+  type ExecutionListResponse,
+  type ExecutionStatus,
+  type ExecutionStep,
+  type ExecutionSummary,
+  type ListExecutionsQuery,
+  type StoredEvent,
 } from "@axle/contracts";
 import { type Database, openDatabase } from "./db";
 import type { ExecutionStore, UpdateExecutionPatch } from "./types";
@@ -37,8 +38,9 @@ export class SqliteExecutionStore implements ExecutionStore {
     const insertExecution = this.db.prepare(
       `INSERT INTO executions
         (id, status, intent, repository_json, change_json, profile_json,
-         plan_json, metrics_json, cancel_requested, created_at, started_at, completed_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
+         plan_json, metrics_json, limits_json, cancel_requested, created_at,
+         started_at, completed_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
     );
     insertExecution.run(
       execution.id,
@@ -49,6 +51,7 @@ export class SqliteExecutionStore implements ExecutionStore {
       JSON.stringify(execution.profile),
       JSON.stringify(execution.plan),
       JSON.stringify(execution.metrics),
+      JSON.stringify(execution.limits),
       execution.createdAt,
       orNull(execution.startedAt),
       orNull(execution.completedAt),
@@ -314,6 +317,7 @@ export class SqliteExecutionStore implements ExecutionStore {
       diagnostics,
       artifacts,
       metrics: JSON.parse(row.metrics_json),
+      limits: row.limits_json ? JSON.parse(row.limits_json) : DEFAULT_LIMITS,
     };
   }
 

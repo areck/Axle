@@ -200,6 +200,30 @@ export function emptyMetrics(): ExecutionMetrics {
   return { stepCount: 0, failedStepCount: 0 };
 }
 
+// --- Resource limits (Axle Control) ----------------------------------------
+
+/**
+ * The effective limits the runtime must enforce for an execution. Produced by
+ * an {@link ExecutionPolicy} and carried on the Execution so the worker enforces
+ * exactly what was decided at admission time.
+ */
+export const ResourceLimitsSchema = z.object({
+  cpu: z.number().positive(),
+  memoryMb: z.number().int().positive(),
+  /** Wall-clock budget for the whole execution. */
+  totalTimeoutSeconds: z.number().int().positive(),
+  /** Maximum captured output per step before truncation. */
+  maxOutputBytes: z.number().int().positive(),
+});
+export type ResourceLimits = z.infer<typeof ResourceLimitsSchema>;
+
+export const DEFAULT_LIMITS: ResourceLimits = {
+  cpu: 2,
+  memoryMb: 4096,
+  totalTimeoutSeconds: 1800,
+  maxOutputBytes: 5_000_000,
+};
+
 // --- Execution -------------------------------------------------------------
 
 export const ExecutionStatusSchema = z.enum([
@@ -237,5 +261,6 @@ export const ExecutionSchema = z.object({
   diagnostics: z.array(DiagnosticSchema).default([]),
   artifacts: z.array(ArtifactSchema).default([]),
   metrics: ExecutionMetricsSchema,
+  limits: ResourceLimitsSchema.default(DEFAULT_LIMITS),
 });
 export type Execution = z.infer<typeof ExecutionSchema>;

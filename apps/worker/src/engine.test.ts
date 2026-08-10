@@ -3,9 +3,11 @@ import os from "node:os";
 import path from "node:path";
 import { LocalArtifactStore } from "@axle/artifacts";
 import {
+  DEFAULT_LIMITS,
   DEFAULT_PROFILE,
   type Execution,
   type PlannedStep,
+  type ResourceLimits,
   emptyChangeSnapshot,
   emptyMetrics,
   newExecutionId,
@@ -47,7 +49,10 @@ function step(overrides: Partial<PlannedStep> & { id: string }): PlannedStep {
   };
 }
 
-function queuedExecution(steps: PlannedStep[]): Execution {
+function queuedExecution(
+  steps: PlannedStep[],
+  limits: ResourceLimits = DEFAULT_LIMITS,
+): Execution {
   return {
     id: newExecutionId(),
     repository: { name: "demo" },
@@ -66,6 +71,7 @@ function queuedExecution(steps: PlannedStep[]): Execution {
     diagnostics: [],
     artifacts: [],
     metrics: emptyMetrics(),
+    limits,
   };
 }
 
@@ -145,5 +151,39 @@ describe("ExecutionEngine (end-to-end)", () => {
     expect(final.status).toBe("succeeded");
     expect(final.metrics.failedStepCount).toBe(0);
     expect(final.artifacts.some((a) => a.name === "execution.log")).toBe(true);
+  });
+
+  it("does not manufacture diagnostics from a succeeded step's output", async () => {
+    // A passing step whose output happens to look like a tsc error must not
+    // produce a false diagnostic — only failed steps are parsed.
+    const final = await runViaQueue(
+      queuedExecution([
+        step({
+          id: "p1",
+          name: "typecheck",
+          command: `node -e "console.log('src/x.ts(1,1): error TS2322: nope'); process.exit(0)"`,
+        }),
+      ]),
+    );
+    expect(final.status).toBe("succeeded");
+    expect(final.diagnostics).toHaveLength(0);
+  });
+
+  it("enforces the total time budget and skips the remaining steps", async () => {
+    const final = await runViaQueue(
+      queuedExecution(
+        [
+          // Non-required so the deadline (not a required failure) ends the run.
+          step({ id: "p1", name: "slow", command: "sleep 5", required: false }),
+          step({ id: "p2", name: "after", command: "echo ok" }),
+        ],
+        { ...DEFAULT_LIMITS, totalTimeoutSeconds: 1 },
+      ),
+    );
+    expect(final.status).toBe("failed");
+    expect(final.steps[1]?.status).toBe("skipped");
+    expect(
+      final.diagnostics.some((d) => d.message.includes("total time budget")),
+    ).toBe(true);
   });
 });
