@@ -1,0 +1,21 @@
+{
+  "name": "@axle/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "bin": {
+    "axle": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "start": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@axle/config": "workspace:*",
+    "@axle/contracts": "workspace:*",
+    "commander": "^12.1.0",
+    "picocolors": "^1.1.1"
+  }
+}
