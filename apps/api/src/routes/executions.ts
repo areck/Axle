@@ -1,6 +1,7 @@
 import {
   CreateExecutionRequestSchema,
   ListExecutionsQuerySchema,
+  isTerminalStatus,
 } from "@axle/contracts";
 import type { FastifyPluginAsync } from "fastify";
 import type { ExecutionService } from "../service";
@@ -91,7 +92,15 @@ export function executionRoutes(service: ExecutionService): FastifyPluginAsync {
       const execution = await service.get(id);
       if (!execution)
         return reply.code(404).send({ error: "execution not found" });
-      await streamEvents(request, reply, (seq) => service.eventsSince(id, seq));
+      await streamEvents(
+        request,
+        reply,
+        (seq) => service.eventsSince(id, seq),
+        async () => {
+          const current = await service.get(id);
+          return current ? isTerminalStatus(current.status) : true;
+        },
+      );
     });
   };
 }
