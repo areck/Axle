@@ -3,6 +3,9 @@
 Axle is built as a sequence of vertical slices. Each keeps the repository
 runnable and protects the boundaries around the Execution primitive.
 
+> For the granular, sequenced execution plan — phases with deliverables, key
+> files, and exit criteria — see [`plan.md`](plan.md).
+
 ## Verify v0 — this pass ✅
 
 The smallest coherent slice that proves the primitive:
