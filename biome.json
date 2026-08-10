@@ -6,7 +6,13 @@
     "useIgnoreFile": true
   },
   "files": {
-    "ignore": ["**/dist/**", "**/.axle/**", "coverage/**", "pnpm-lock.yaml"]
+    "ignore": [
+      "**/dist/**",
+      "**/.axle/**",
+      "coverage/**",
+      "pnpm-lock.yaml",
+      "examples/**"
+    ]
   },
   "formatter": {
     "enabled": true,

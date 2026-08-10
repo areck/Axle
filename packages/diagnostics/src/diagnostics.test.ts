@@ -53,6 +53,30 @@ describe("DiagnosticsEngine", () => {
     expect(diagnostics[0]?.message).toContain("500");
   });
 
+  it("strips ANSI and prefers the error line over diff markers & summaries", () => {
+    const esc = String.fromCharCode(0x1b);
+    // Shaped like real Vitest output: an AssertionError line, a -/+ diff, a
+    // stack frame, and trailing summary lines.
+    const output = [
+      `${esc}[31mFAIL${esc}[39m src/auth.test.ts > loginStatus`,
+      `${esc}[1mAssertionError${esc}[22m: expected 500 to be 401 // Object.is equality`,
+      "- Expected",
+      "+ Received",
+      "  at src/auth.test.ts:10:32",
+      "Tests  1 failed | 2 passed (3)",
+      "Duration  314ms (transform 46ms)",
+    ].join("\n");
+
+    const diagnostics = engine.parseStep(
+      ctx({ name: "test", command: "npm test", output, exitCode: 1 }),
+    );
+    const message = diagnostics[0]?.message ?? "";
+    expect(message).toContain("expected 500 to be 401");
+    expect(message).not.toContain(esc); // no raw ANSI codes
+    expect(message).not.toContain("Received"); // not the diff marker
+    expect(message).not.toContain("Duration"); // not the trailing summary
+  });
+
   it("produces no diagnostics for a successful step", () => {
     const diagnostics = engine.parseStep(
       ctx({ name: "test", output: "ok", exitCode: 0 }),

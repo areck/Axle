@@ -1,6 +1,7 @@
 import type {
   Diagnostic,
   Execution,
+  ExecutionPlan,
   ExecutionStatus,
   ExecutionStep,
   ExecutionStepStatus,
@@ -112,6 +113,17 @@ export function renderExecutionDetail(execution: Execution): void {
     }
   }
   process.stdout.write("\n");
+}
+
+/** Preview the planned verification steps before an execution starts. */
+export function renderPlan(plan: ExecutionPlan): void {
+  process.stdout.write(`\n  ${pc.bold("Verification plan")}\n`);
+  for (const step of plan.steps) {
+    const optional = step.required ? "" : pc.dim(" (optional)");
+    process.stdout.write(
+      `  ${symbols.pending} ${step.name}${optional}  ${pc.dim(step.command)}\n`,
+    );
+  }
 }
 
 export function fail(message: string): never {
