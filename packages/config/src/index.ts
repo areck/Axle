@@ -1,0 +1,81 @@
+import fs from "node:fs";
+import path from "node:path";
+import process from "node:process";
+
+/**
+ * Runtime selection.
+ *
+ * - `local`  — LocalRuntime: ephemeral temp-dir subprocess. No isolation. Dev only.
+ * - `docker` — DockerRuntime: isolated container (not yet implemented in this pass).
+ * - `auto`   — Docker if a daemon is reachable, otherwise Local (with a warning).
+ */
+export type RuntimeSelection = "local" | "docker" | "auto";
+
+export interface AxleConfig {
+  /** Host the API binds to. */
+  apiHost: string;
+  /** Port the API binds to. */
+  apiPort: number;
+  /** Base URL the CLI uses to reach the API. */
+  apiUrl: string;
+  /** Absolute path to the Axle home directory (holds the DB + artifacts). */
+  home: string;
+  /** Absolute path to the SQLite database file. */
+  dbPath: string;
+  /** Absolute path to the artifacts directory. */
+  artifactsDir: string;
+  /** Which runtime to use. */
+  runtime: RuntimeSelection;
+}
+
+const DEFAULT_PORT = 8787;
+
+function parseRuntime(value: string | undefined): RuntimeSelection {
+  if (value === "local" || value === "docker" || value === "auto") return value;
+  return "auto";
+}
+
+/**
+ * Walk up from `startDir` to the pnpm workspace root so that all Axle processes
+ * (API, worker, CLI) — regardless of the directory they were launched from —
+ * agree on a single `.axle` home and therefore a single database + artifact
+ * store. Falls back to `startDir` when no workspace marker is found.
+ */
+function findWorkspaceRoot(startDir: string): string {
+  let dir = startDir;
+  for (;;) {
+    if (fs.existsSync(path.join(dir, "pnpm-workspace.yaml"))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) return startDir;
+    dir = parent;
+  }
+}
+
+/**
+ * Resolve Axle configuration from the environment, applying sensible defaults.
+ * Axle requires no configuration to run locally.
+ */
+export function resolveConfig(
+  env: NodeJS.ProcessEnv = process.env,
+  cwd: string = process.cwd(),
+): AxleConfig {
+  const apiHost = env.AXLE_API_HOST ?? "127.0.0.1";
+  const apiPort = Number(env.AXLE_API_PORT ?? DEFAULT_PORT);
+  const apiUrl = env.AXLE_API_URL ?? `http://${apiHost}:${apiPort}`;
+  const rawHome = env.AXLE_HOME ?? ".axle";
+  // Absolute AXLE_HOME wins; otherwise anchor the default at the workspace root
+  // so the API and worker share one database and artifact store.
+  const home = path.isAbsolute(rawHome)
+    ? rawHome
+    : path.resolve(findWorkspaceRoot(cwd), rawHome);
+
+  return {
+    apiHost,
+    apiPort,
+    apiUrl,
+    home,
+    dbPath: path.join(home, "axle.db"),
+    artifactsDir: path.join(home, "artifacts"),
+    runtime: parseRuntime(env.AXLE_RUNTIME),
+  };
+}

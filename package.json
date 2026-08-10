@@ -1,0 +1,31 @@
+{
+  "name": "axle",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Axle — the execution layer for Agent Experience. Axle Verify lets coding agents run and verify uncommitted changes in isolated environments and get back structured evidence.",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "dev": "concurrently -n api,worker -c blue,magenta \"pnpm --filter @axle/api dev\" \"pnpm --filter @axle/worker dev\"",
+    "axle": "tsx packages/cli/src/index.ts",
+    "clean": "pnpm -r exec rm -rf dist .tsbuildinfo && rm -rf .axle"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@types/node": "^22.10.5",
+    "concurrently": "^9.1.2",
+    "tsup": "^8.3.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  }
+}

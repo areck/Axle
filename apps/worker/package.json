@@ -1,0 +1,23 @@
+{
+  "name": "@axle/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/main.ts",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js",
+    "build": "tsup",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@axle/artifacts": "workspace:*",
+    "@axle/config": "workspace:*",
+    "@axle/contracts": "workspace:*",
+    "@axle/diagnostics": "workspace:*",
+    "@axle/persistence": "workspace:*",
+    "@axle/runtime": "workspace:*",
+    "@axle/runtime-docker": "workspace:*",
+    "@axle/runtime-local": "workspace:*"
+  }
+}
