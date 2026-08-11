@@ -88,20 +88,24 @@ the product layer. See [`docs/architecture.md`](docs/architecture.md).
 
 Requires **Node 22+** and **pnpm**.
 
-The control plane requires two secrets before it will start: an API token
-(bearer auth on every `/v1` endpoint) and a key that encrypts secrets at rest.
+The control plane requires two secrets before it will start: a Better Auth
+signing secret and a key that encrypts secrets at rest. Seed an initial admin
+so you have someone to log in as.
 
 ```bash
 pnpm install
-export AXLE_API_TOKEN=$(openssl rand -hex 32)      # the CLI reads this too
-export AXLE_SECRET_KEY=$(openssl rand -base64 32)   # 32 bytes, base64
+export BETTER_AUTH_SECRET=$(openssl rand -base64 32)   # auth signing secret
+export AXLE_SECRET_KEY=$(openssl rand -base64 32)       # encrypts secrets at rest
+export AXLE_ADMIN_EMAIL=you@example.com
+export AXLE_ADMIN_PASSWORD=$(openssl rand -base64 18)   # seed the first admin
 pnpm dev          # starts the API (:8787) and the worker
 ```
 
-In another terminal (the CLI needs `AXLE_API_TOKEN` in its environment):
+In another terminal, log in — this stores an API key the CLI presents on every
+request:
 
 ```bash
-export AXLE_API_TOKEN=…   # same value as the API
+pnpm axle login --email you@example.com --password "$AXLE_ADMIN_PASSWORD"
 pnpm axle doctor
 ```
 
@@ -161,9 +165,11 @@ pnpm axle executions                   # recent history
 
 | Command | Description |
 | --- | --- |
+| `axle login` | Sign in with email/password; stores an API key the CLI presents on every request. |
+| `axle auth whoami / create-user` | Show the current identity/role; provision users (admin only). |
 | `axle verify` | Capture the working tree, plan verification (from `axle.yaml`, or auto-detected: install → typecheck → lint → test → build), and run it in isolation. |
 | `axle init` | Configure `axle.yaml`: print a prompt for your coding agent to author it, or `--write` a detected scaffold. |
-| `axle env set/list/get/delete` | Manage environments & secrets in the control plane; reference one from an execution with `--env`. |
+| `axle env set/list/get/delete` | Manage environments & secrets in the control plane (writes require admin); reference one from an execution with `--env`. |
 | `axle run "<command>"` | Run a single command in an isolated execution and stream structured evidence. |
 | `axle inspect <id>` | Show the full record for an execution (steps, diagnostics, artifacts, timing). |
 | `axle executions` | List recent execution history. |
@@ -249,15 +255,27 @@ The execution record only ever stores the environment's *name*.
 
 - **encrypted at rest** — AES-256-GCM under `AXLE_SECRET_KEY`; the database
   holds only `enc:v1:…` ciphertext, never plaintext;
-- **behind API access** — every `/v1` endpoint requires the `AXLE_API_TOKEN`
-  bearer token (only `/health` is open);
+- **behind authenticated, role-gated access** — every `/v1` endpoint requires a
+  Better Auth API key (only `/health` and the login exchange are open), and
+  **writing** environments/secrets requires the **admin** role (members can run,
+  verify, inspect, and read);
 - **write-only** — never returned on read, never copied into the execution
   record, and redacted from logs.
 
 The API and worker refuse to start without their required env vars, so the
 control plane can't come up unauthenticated or storing plaintext secrets. Lose
-`AXLE_SECRET_KEY` and the secrets are unrecoverable, by design. Key rotation and
-an external secret backend are future work.
+`AXLE_SECRET_KEY` and the secrets are unrecoverable, by design. Key rotation, an
+external secret backend, and richer team roles are future work.
+
+### Authentication & roles
+
+Identities are managed by **[Better Auth](https://www.better-auth.com/)** on the
+same Drizzle database. Email/password accounts own **API keys** (`axk_…`) that
+agents and the CLI present as bearer tokens; the `admin` plugin adds roles
+(**admin** / **member**) the API authorizes against. `axle login` exchanges
+credentials for a key and stores it (`$AXLE_HOME/api-key`, mode 0600); an admin
+provisions others with `axle auth create-user`. The API seeds an initial admin
+from `AXLE_ADMIN_EMAIL` / `AXLE_ADMIN_PASSWORD` on startup.
 
 ## How it works
 
