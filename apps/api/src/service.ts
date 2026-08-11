@@ -107,6 +107,7 @@ function buildExecution(
     profile: request.profile ?? DEFAULT_PROFILE,
     plan: request.plan,
     status: "queued",
+    environment: request.environment,
     createdAt,
     steps,
     diagnostics: [],
