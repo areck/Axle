@@ -1,9 +1,11 @@
 import { LocalArtifactStore } from "@axle/artifacts";
+import { createAuth, ensureAdminUser } from "@axle/auth";
 import { resolveConfig } from "@axle/config";
 import {
   Encryptor,
   SqliteEnvironmentStore,
   SqliteExecutionStore,
+  openDatabase,
 } from "@axle/persistence";
 import { AllowAllPolicy } from "./policy";
 import { buildServer } from "./server";
@@ -22,10 +24,10 @@ function requireEnv(
 
 async function main(): Promise<void> {
   const config = resolveConfig();
-  const token = requireEnv(
-    config.apiToken,
-    "AXLE_API_TOKEN",
-    "openssl rand -hex 32",
+  const authSecret = requireEnv(
+    config.authSecret,
+    "BETTER_AUTH_SECRET",
+    "openssl rand -base64 32",
   );
   const secretKey = requireEnv(
     config.secretKey,
@@ -40,12 +42,33 @@ async function main(): Promise<void> {
   );
   const artifacts = new LocalArtifactStore(config.artifactsDir);
 
+  // A dedicated DB handle for auth + identity/role lookups.
+  const db = openDatabase(config.dbPath);
+  const auth = createAuth({
+    db,
+    secret: authSecret,
+    baseURL: config.authUrl,
+  });
+
+  // Seed an admin identity if configured (idempotent).
+  if (config.adminEmail && config.adminPassword) {
+    const { created } = await ensureAdminUser(auth, db, {
+      email: config.adminEmail,
+      password: config.adminPassword,
+    });
+    const state = created ? "created" : "present";
+    console.log(
+      `[api] admin ${state}: ${config.adminEmail} (run 'axle login' for a key)`,
+    );
+  }
+
   const app = await buildServer({
     store,
     environments,
     artifacts,
     policy: new AllowAllPolicy(),
-    token,
+    auth,
+    db,
   });
 
   await app.listen({ host: config.apiHost, port: config.apiPort });

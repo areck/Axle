@@ -26,10 +26,17 @@ export interface AxleConfig {
   artifactsDir: string;
   /** Which runtime to use. */
   runtime: RuntimeSelection;
-  /** Bearer token the API requires and the CLI presents (AXLE_API_TOKEN). */
-  apiToken?: string;
   /** Base64 32-byte key for encrypting secrets at rest (AXLE_SECRET_KEY). */
   secretKey?: string;
+  /** Better Auth signing secret (BETTER_AUTH_SECRET); ≥32 chars. */
+  authSecret?: string;
+  /** Public base URL Better Auth advertises (BETTER_AUTH_URL); defaults to apiUrl. */
+  authUrl: string;
+  /** Optional admin to seed on API startup (AXLE_ADMIN_EMAIL / AXLE_ADMIN_PASSWORD). */
+  adminEmail?: string;
+  adminPassword?: string;
+  /** API key the CLI presents (AXLE_API_KEY). */
+  apiKey?: string;
 }
 
 const DEFAULT_PORT = 8787;
@@ -81,7 +88,11 @@ export function resolveConfig(
     dbPath: path.join(home, "axle.db"),
     artifactsDir: path.join(home, "artifacts"),
     runtime: parseRuntime(env.AXLE_RUNTIME),
-    apiToken: env.AXLE_API_TOKEN,
     secretKey: env.AXLE_SECRET_KEY,
+    authSecret: env.BETTER_AUTH_SECRET,
+    authUrl: env.BETTER_AUTH_URL ?? apiUrl,
+    adminEmail: env.AXLE_ADMIN_EMAIL,
+    adminPassword: env.AXLE_ADMIN_PASSWORD,
+    apiKey: env.AXLE_API_KEY,
   };
 }

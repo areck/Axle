@@ -3,13 +3,14 @@ import {
   SetEnvironmentRequestSchema,
 } from "@axle/contracts";
 import type { FastifyPluginAsync } from "fastify";
+import { requireAdmin } from "../auth";
 import type { EnvironmentService } from "../environment-service";
 
 /**
  * Routes for `/v1/environments` — the control-plane authority for environments
- * & secrets. Reads return non-secret variables plus secret *names*; secret
- * values are write-only and only ever leave the store via the worker's
- * resolve path, never here.
+ * & secrets. Reads (any authenticated caller) return non-secret variables plus
+ * secret *names*; writes require the admin role. Secret values are write-only
+ * and only ever leave the store via the worker's resolve path, never here.
  */
 export function environmentRoutes(
   service: EnvironmentService,
@@ -29,6 +30,7 @@ export function environmentRoutes(
     });
 
     app.put("/:name", async (request, reply) => {
+      if (!requireAdmin(request, reply)) return;
       const { name } = request.params as { name: string };
       if (!EnvironmentNameSchema.safeParse(name).success) {
         return reply.code(400).send({ error: "invalid environment name" });
@@ -44,6 +46,7 @@ export function environmentRoutes(
     });
 
     app.delete("/:name", async (request, reply) => {
+      if (!requireAdmin(request, reply)) return;
       const { name } = request.params as { name: string };
       if (!(await service.delete(name))) {
         return reply.code(404).send({ error: "environment not found" });

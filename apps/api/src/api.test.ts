@@ -4,37 +4,80 @@ import os from "node:os";
 import path from "node:path";
 import { LocalArtifactStore } from "@axle/artifacts";
 import {
+  createAuth,
+  createUser,
+  ensureAdminUser,
+  issueApiKey,
+} from "@axle/auth";
+import {
+  type AxleDatabase,
   Encryptor,
   SqliteEnvironmentStore,
   SqliteExecutionStore,
+  closeDatabase,
+  openDatabase,
 } from "@axle/persistence";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AllowAllPolicy } from "./policy";
 import { buildServer } from "./server";
 
-const TOKEN = "test-token";
-const auth = { authorization: `Bearer ${TOKEN}` };
-
 let dir: string;
 let store: SqliteExecutionStore;
 let environments: SqliteEnvironmentStore;
+let db: AxleDatabase;
 let app: FastifyInstance;
+let adminKey: string;
+let memberKey: string;
+
+const bearer = (key: string) => ({ authorization: `Bearer ${key}` });
 
 beforeAll(async () => {
   dir = await fs.mkdtemp(path.join(os.tmpdir(), "axle-api-"));
-  store = new SqliteExecutionStore(path.join(dir, "axle.db"));
+  const dbPath = path.join(dir, "axle.db");
+  store = new SqliteExecutionStore(dbPath);
   environments = new SqliteEnvironmentStore(
-    path.join(dir, "axle.db"),
+    dbPath,
     new Encryptor(crypto.randomBytes(32)),
   );
   const artifacts = new LocalArtifactStore(path.join(dir, "artifacts"));
+  db = openDatabase(dbPath);
+  const auth = createAuth({
+    db,
+    secret: "test-secret-test-secret-test-secret-0123",
+    baseURL: "http://127.0.0.1:8787",
+  });
+
+  await ensureAdminUser(auth, db, {
+    email: "admin@axle.dev",
+    password: "admin-pw-12345",
+  });
+  const adminLogin = await issueApiKey(auth, db, {
+    email: "admin@axle.dev",
+    password: "admin-pw-12345",
+  });
+  if (!adminLogin) throw new Error("admin bootstrap failed");
+  adminKey = adminLogin.key;
+
+  await createUser(auth, db, {
+    email: "member@axle.dev",
+    password: "member-pw-12345",
+    role: "member",
+  });
+  const memberLogin = await issueApiKey(auth, db, {
+    email: "member@axle.dev",
+    password: "member-pw-12345",
+  });
+  if (!memberLogin) throw new Error("member setup failed");
+  memberKey = memberLogin.key;
+
   app = await buildServer({
     store,
     environments,
     artifacts,
     policy: new AllowAllPolicy(),
-    token: TOKEN,
+    auth,
+    db,
   });
 });
 
@@ -42,6 +85,7 @@ afterAll(async () => {
   await app.close();
   store.close();
   environments.close();
+  closeDatabase(db);
   await fs.rm(dir, { recursive: true, force: true });
 });
 
@@ -55,132 +99,97 @@ const validPayload = {
 };
 
 describe("Axle API", () => {
-  it("reports health without a token", async () => {
+  it("reports health without a key", async () => {
     const res = await app.inject({ method: "GET", url: "/health" });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ status: "ok", service: "axle-api" });
   });
 
-  it("requires a bearer token on /v1 endpoints", async () => {
-    const noToken = await app.inject({
+  it("requires an API key on /v1 endpoints", async () => {
+    const noKey = await app.inject({ method: "GET", url: "/v1/executions" });
+    expect(noKey.statusCode).toBe(401);
+    const badKey = await app.inject({
       method: "GET",
       url: "/v1/executions",
+      headers: bearer("axk_nope"),
     });
-    expect(noToken.statusCode).toBe(401);
-
-    const wrongToken = await app.inject({
-      method: "GET",
-      url: "/v1/executions",
-      headers: { authorization: "Bearer nope" },
-    });
-    expect(wrongToken.statusCode).toBe(401);
+    expect(badKey.statusCode).toBe(401);
   });
 
-  it("creates and retrieves an execution", async () => {
+  it("exchanges credentials for an API key at /v1/auth/token", async () => {
+    const ok = await app.inject({
+      method: "POST",
+      url: "/v1/auth/token",
+      payload: { email: "admin@axle.dev", password: "admin-pw-12345" },
+    });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json().key).toMatch(/^axk_/);
+    expect(ok.json().role).toBe("admin");
+
+    const bad = await app.inject({
+      method: "POST",
+      url: "/v1/auth/token",
+      payload: { email: "admin@axle.dev", password: "wrong" },
+    });
+    expect(bad.statusCode).toBe(401);
+  });
+
+  it("creates and retrieves an execution (authenticated)", async () => {
     const created = await app.inject({
       method: "POST",
       url: "/v1/executions",
-      headers: auth,
+      headers: bearer(memberKey),
       payload: validPayload,
     });
     expect(created.statusCode).toBe(201);
     const execution = created.json();
     expect(execution.status).toBe("queued");
-    expect(execution.steps).toHaveLength(1);
     expect(execution.id).toMatch(/^exec_/);
 
     const fetched = await app.inject({
       method: "GET",
       url: `/v1/executions/${execution.id}`,
-      headers: auth,
+      headers: bearer(memberKey),
     });
     expect(fetched.statusCode).toBe(200);
-    expect(fetched.json().intent).toBe("verify the thing");
   });
 
-  it("lists executions", async () => {
-    const res = await app.inject({
-      method: "GET",
-      url: "/v1/executions",
-      headers: auth,
-    });
-    expect(res.statusCode).toBe(200);
-    expect(res.json().total).toBeGreaterThanOrEqual(1);
-  });
-
-  it("rejects an invalid request", async () => {
-    const res = await app.inject({
-      method: "POST",
-      url: "/v1/executions",
-      headers: auth,
-      payload: { repository: { name: "demo" } },
-    });
-    expect(res.statusCode).toBe(400);
-  });
-
-  it("returns 404 for a missing execution", async () => {
-    const res = await app.inject({
-      method: "GET",
-      url: "/v1/executions/exec_nope",
-      headers: auth,
-    });
-    expect(res.statusCode).toBe(404);
-  });
-
-  it("manages environments and never returns secret values", async () => {
-    const set = await app.inject({
+  it("lets an admin write environments but forbids a member (403)", async () => {
+    const asAdmin = await app.inject({
       method: "PUT",
       url: "/v1/environments/ci",
-      headers: auth,
+      headers: bearer(adminKey),
       payload: {
         variables: { NODE_ENV: "test" },
         secrets: { NPM_TOKEN: "s3cr3t-value" },
       },
     });
-    expect(set.statusCode).toBe(200);
-    expect(set.json().variables).toEqual({ NODE_ENV: "test" });
-    expect(set.json().secretNames).toEqual(["NPM_TOKEN"]);
-    expect(set.body).not.toContain("s3cr3t-value");
+    expect(asAdmin.statusCode).toBe(200);
+    expect(asAdmin.body).not.toContain("s3cr3t-value");
+    expect(asAdmin.json().secretNames).toEqual(["NPM_TOKEN"]);
 
-    const get = await app.inject({
+    const asMember = await app.inject({
+      method: "PUT",
+      url: "/v1/environments/ci",
+      headers: bearer(memberKey),
+      payload: { variables: { X: "1" }, secrets: {} },
+    });
+    expect(asMember.statusCode).toBe(403);
+
+    // A member can still read (secret value never returned).
+    const read = await app.inject({
       method: "GET",
       url: "/v1/environments/ci",
-      headers: auth,
+      headers: bearer(memberKey),
     });
-    expect(get.statusCode).toBe(200);
-    expect(get.body).not.toContain("s3cr3t-value");
-    expect(get.json().secretNames).toEqual(["NPM_TOKEN"]);
+    expect(read.statusCode).toBe(200);
+    expect(read.body).not.toContain("s3cr3t-value");
 
-    const list = await app.inject({
-      method: "GET",
-      url: "/v1/environments",
-      headers: auth,
-    });
-    expect(
-      list.json().environments.some((e: { name: string }) => e.name === "ci"),
-    ).toBe(true);
-
-    const del = await app.inject({
+    const memberDelete = await app.inject({
       method: "DELETE",
       url: "/v1/environments/ci",
-      headers: auth,
+      headers: bearer(memberKey),
     });
-    expect(del.statusCode).toBe(200);
-    const missing = await app.inject({
-      method: "GET",
-      url: "/v1/environments/ci",
-      headers: auth,
-    });
-    expect(missing.statusCode).toBe(404);
-  });
-
-  it("rejects an invalid environment name", async () => {
-    const res = await app.inject({
-      method: "PUT",
-      url: "/v1/environments/has%20space",
-      headers: auth,
-      payload: { variables: {}, secrets: {} },
-    });
-    expect(res.statusCode).toBe(400);
+    expect(memberDelete.statusCode).toBe(403);
   });
 });

@@ -1,6 +1,7 @@
 import { resolveConfig } from "@axle/config";
 import { Command } from "commander";
 import {
+  createUserCommand,
   doctorCommand,
   envDeleteCommand,
   envGetCommand,
@@ -9,8 +10,10 @@ import {
   executionsCommand,
   initCommand,
   inspectCommand,
+  loginCommand,
   runCommand,
   verifyCommand,
+  whoamiCommand,
 } from "./commands";
 import { fail } from "./ui";
 
@@ -89,6 +92,51 @@ async function main(): Promise<void> {
       await initCommand({
         write: Boolean(options.write),
         force: Boolean(options.force),
+      });
+    });
+
+  program
+    .command("login")
+    .description("Sign in with email/password and store an API key")
+    .requiredOption("--email <email>", "account email")
+    .requiredOption("--password <password>", "account password")
+    .option("--json", "print as JSON", false)
+    .action(async (options, thisCommand) => {
+      const api = thisCommand.optsWithGlobals().api as string;
+      await loginCommand({
+        api,
+        email: options.email,
+        password: options.password,
+        json: Boolean(options.json),
+      });
+    });
+
+  const auth = program.command("auth").description("Manage identities & roles");
+
+  auth
+    .command("whoami")
+    .description("Show the current identity and role")
+    .option("--json", "print as JSON", false)
+    .action(async (options, thisCommand) => {
+      const api = thisCommand.optsWithGlobals().api as string;
+      await whoamiCommand({ api, json: Boolean(options.json) });
+    });
+
+  auth
+    .command("create-user")
+    .description("Provision a user (admin only)")
+    .requiredOption("--email <email>", "new user's email")
+    .requiredOption("--password <password>", "new user's password")
+    .option("--role <role>", "admin or member", "member")
+    .option("--json", "print as JSON", false)
+    .action(async (options, thisCommand) => {
+      const api = thisCommand.optsWithGlobals().api as string;
+      await createUserCommand({
+        api,
+        email: options.email,
+        password: options.password,
+        role: options.role,
+        json: Boolean(options.json),
       });
     });
 

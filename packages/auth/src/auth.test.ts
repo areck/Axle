@@ -1,53 +1,82 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import {
+  type AxleDatabase,
+  closeDatabase,
+  openDatabase,
+} from "@axle/persistence";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { type Auth, createAuth } from "./auth";
+import {
+  createUser,
+  ensureAdminUser,
+  issueApiKey,
+  verifyApiKeyIdentity,
+} from "./identity";
 
 let dir: string;
+let db: AxleDatabase;
 let auth: Auth;
 
 beforeAll(async () => {
   dir = await fs.mkdtemp(path.join(os.tmpdir(), "axle-auth-"));
+  db = openDatabase(path.join(dir, "axle.db"));
   auth = createAuth({
-    dbPath: path.join(dir, "axle.db"),
+    db,
     secret: "test-secret-test-secret-test-secret-0123",
     baseURL: "http://127.0.0.1:8787",
   });
 });
 
 afterAll(async () => {
+  closeDatabase(db);
   await fs.rm(dir, { recursive: true, force: true });
 });
 
-describe("Better Auth", () => {
-  it("signs up a user, then issues and verifies an API key", async () => {
-    const signUp = await auth.api.signUpEmail({
-      body: {
-        email: "admin@axle.dev",
-        password: "sup3r-secure-pw",
-        name: "Admin",
-      },
+describe("Better Auth identity", () => {
+  it("bootstraps an admin and resolves its key to an admin identity", async () => {
+    const { userId, created } = await ensureAdminUser(auth, db, {
+      email: "admin@axle.dev",
+      password: "sup3r-secure-pw",
+      name: "Admin",
     });
-    expect(signUp.user.id).toBeTruthy();
+    expect(created).toBe(true);
 
-    const created = await auth.api.createApiKey({
-      body: { name: "cli", userId: signUp.user.id, prefix: "axk_" },
+    const login = await issueApiKey(auth, db, {
+      email: "admin@axle.dev",
+      password: "sup3r-secure-pw",
     });
-    expect(created.key).toMatch(/^axk_/);
+    expect(login?.key).toMatch(/^axk_/);
+    expect(login?.identity.role).toBe("admin");
 
-    const verified = await auth.api.verifyApiKey({
-      body: { key: created.key },
+    const key = login?.key ?? "";
+    expect(await verifyApiKeyIdentity(auth, db, key)).toEqual({
+      userId,
+      role: "admin",
     });
-    expect(verified.valid).toBe(true);
-    // The key resolves back to its owning identity.
-    expect(verified.key?.referenceId).toBe(signUp.user.id);
   });
 
-  it("rejects an unknown API key", async () => {
-    const verified = await auth.api.verifyApiKey({
-      body: { key: "axk_not-a-real-key" },
+  it("creates a member whose key resolves to the member role", async () => {
+    const memberId = await createUser(auth, db, {
+      email: "member@axle.dev",
+      password: "member-pw-123",
+      role: "member",
     });
-    expect(verified.valid).toBe(false);
+    const login = await issueApiKey(auth, db, {
+      email: "member@axle.dev",
+      password: "member-pw-123",
+    });
+    expect(login?.identity).toEqual({ userId: memberId, role: "member" });
+  });
+
+  it("rejects an unknown key and bad credentials", async () => {
+    expect(await verifyApiKeyIdentity(auth, db, "axk_nope")).toBeNull();
+    expect(
+      await issueApiKey(auth, db, {
+        email: "admin@axle.dev",
+        password: "wrong-password",
+      }),
+    ).toBeNull();
   });
 });

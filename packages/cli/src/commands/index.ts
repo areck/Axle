@@ -1,3 +1,10 @@
+export {
+  type CreateUserOptions,
+  createUserCommand,
+  type LoginOptions,
+  loginCommand,
+  whoamiCommand,
+} from "./auth";
 export { doctorCommand } from "./doctor";
 export {
   type EnvSetOptions,
