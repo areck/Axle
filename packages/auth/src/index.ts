@@ -2,15 +2,20 @@ export {
   API_KEY_PREFIX,
   type Auth,
   type AuthOptions,
+  CLI_CLIENT_ID,
   createAuth,
+  resolveRole,
+  type SocialProviderCredentials,
 } from "./auth";
 export {
   createApiKeyFor,
-  createUser,
-  ensureAdminUser,
+  ensureUser,
   type Identity,
-  issueApiKey,
+  mintApiKeyForEmail,
   type Role,
+  roleOf,
   ROLES,
+  setRole,
+  setRoleByEmail,
   verifyApiKeyIdentity,
 } from "./identity";

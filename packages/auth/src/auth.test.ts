@@ -7,11 +7,12 @@ import {
   openDatabase,
 } from "@axle/persistence";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { type Auth, createAuth } from "./auth";
+import { type Auth, createAuth, resolveRole } from "./auth";
 import {
-  createUser,
-  ensureAdminUser,
-  issueApiKey,
+  ensureUser,
+  mintApiKeyForEmail,
+  roleOf,
+  setRoleByEmail,
   verifyApiKeyIdentity,
 } from "./identity";
 
@@ -26,6 +27,7 @@ beforeAll(async () => {
     db,
     secret: "test-secret-test-secret-test-secret-0123",
     baseURL: "http://127.0.0.1:8787",
+    adminEmails: ["admin@axle.dev"],
   });
 });
 
@@ -34,49 +36,62 @@ afterAll(async () => {
   await fs.rm(dir, { recursive: true, force: true });
 });
 
-describe("Better Auth identity", () => {
-  it("bootstraps an admin and resolves its key to an admin identity", async () => {
-    const { userId, created } = await ensureAdminUser(auth, db, {
-      email: "admin@axle.dev",
-      password: "sup3r-secure-pw",
-      name: "Admin",
-    });
-    expect(created).toBe(true);
+describe("resolveRole (admin allowlist)", () => {
+  it("grants admin only to allowlisted emails, case-insensitively", () => {
+    const allow = ["Admin@Axle.dev", " ops@axle.dev "];
+    expect(resolveRole("admin@axle.dev", allow)).toBe("admin");
+    expect(resolveRole("OPS@axle.dev", allow)).toBe("admin");
+    expect(resolveRole("someone@axle.dev", allow)).toBe("member");
+    expect(resolveRole("admin@axle.dev", [])).toBe("member");
+  });
+});
 
-    const login = await issueApiKey(auth, db, {
+describe("passwordless identities", () => {
+  it("provisions an admin whose minted key resolves to the admin role", async () => {
+    const { key, identity } = await mintApiKeyForEmail(auth, db, {
       email: "admin@axle.dev",
-      password: "sup3r-secure-pw",
+      role: "admin",
     });
-    expect(login?.key).toMatch(/^axk_/);
-    expect(login?.identity.role).toBe("admin");
+    expect(key).toMatch(/^axk_/);
+    expect(identity.role).toBe("admin");
 
-    const key = login?.key ?? "";
     expect(await verifyApiKeyIdentity(auth, db, key)).toEqual({
-      userId,
+      userId: identity.userId,
       role: "admin",
     });
   });
 
-  it("creates a member whose key resolves to the member role", async () => {
-    const memberId = await createUser(auth, db, {
+  it("provisions a member whose key resolves to the member role", async () => {
+    const { key, identity } = await mintApiKeyForEmail(auth, db, {
       email: "member@axle.dev",
-      password: "member-pw-123",
       role: "member",
     });
-    const login = await issueApiKey(auth, db, {
-      email: "member@axle.dev",
-      password: "member-pw-123",
+    expect(identity.role).toBe("member");
+    expect(await verifyApiKeyIdentity(auth, db, key)).toEqual({
+      userId: identity.userId,
+      role: "member",
     });
-    expect(login?.identity).toEqual({ userId: memberId, role: "member" });
   });
 
-  it("rejects an unknown key and bad credentials", async () => {
+  it("is idempotent: the same email reuses one identity", () => {
+    const first = ensureUser(db, { email: "dup@axle.dev", role: "member" });
+    const second = ensureUser(db, { email: "dup@axle.dev", role: "member" });
+    expect(first).toBe(second);
+  });
+
+  it("lets an admin promote and demote a user by email", () => {
+    const userId = ensureUser(db, {
+      email: "promote@axle.dev",
+      role: "member",
+    });
+    expect(setRoleByEmail(db, "promote@axle.dev", "admin")).toBe(userId);
+    expect(roleOf(db, userId)).toBe("admin");
+    setRoleByEmail(db, "promote@axle.dev", "member");
+    expect(roleOf(db, userId)).toBe("member");
+    expect(setRoleByEmail(db, "nobody@axle.dev", "admin")).toBeNull();
+  });
+
+  it("rejects an unknown API key", async () => {
     expect(await verifyApiKeyIdentity(auth, db, "axk_nope")).toBeNull();
-    expect(
-      await issueApiKey(auth, db, {
-        email: "admin@axle.dev",
-        password: "wrong-password",
-      }),
-    ).toBeNull();
   });
 });

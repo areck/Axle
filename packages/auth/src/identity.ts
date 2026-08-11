@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { type AxleDatabase, authSchema } from "@axle/persistence";
 import { eq } from "drizzle-orm";
 import type { Auth } from "./auth";
@@ -16,7 +17,7 @@ function normalizeRole(role: string | null | undefined): Role {
   return role === "admin" ? "admin" : "member";
 }
 
-function roleOf(db: AxleDatabase, userId: string): Role {
+export function roleOf(db: AxleDatabase, userId: string): Role {
   const row = db
     .select({ role: authSchema.user.role })
     .from(authSchema.user)
@@ -38,74 +39,38 @@ export async function verifyApiKeyIdentity(
 }
 
 /**
- * Exchange email/password for a fresh API key — the CLI login. Returns null on
- * bad credentials.
+ * Idempotently ensure a user identity exists and carries `role`, returning its
+ * id. This provisions a **passwordless** user row directly — used to bootstrap
+ * the first admin and to seed identities in tests. Human sign-ups instead go
+ * through OAuth/magic-link, where the `adminEmails` allowlist assigns the role.
  */
-export async function issueApiKey(
-  auth: Auth,
+export function ensureUser(
   db: AxleDatabase,
-  credentials: { email: string; password: string },
-): Promise<{ key: string; identity: Identity } | null> {
-  let userId: string;
-  try {
-    const signIn = await auth.api.signInEmail({
-      body: { email: credentials.email, password: credentials.password },
-    });
-    if (!signIn?.user) return null;
-    userId = signIn.user.id;
-  } catch {
-    return null; // invalid credentials
-  }
-  const created = await auth.api.createApiKey({
-    body: { userId, name: `cli:${credentials.email}` },
-  });
-  return { key: created.key, identity: { userId, role: roleOf(db, userId) } };
-}
-
-/**
- * Ensure an admin identity exists (idempotent) — used to bootstrap the control
- * plane. Creates the user if absent and (re)asserts the admin role.
- */
-export async function ensureAdminUser(
-  auth: Auth,
-  db: AxleDatabase,
-  adminUser: { email: string; password: string; name?: string },
-): Promise<{ userId: string; created: boolean }> {
+  user: { email: string; name?: string; role: Role },
+): string {
   const existing = db
     .select({ id: authSchema.user.id })
     .from(authSchema.user)
-    .where(eq(authSchema.user.email, adminUser.email))
+    .where(eq(authSchema.user.email, user.email))
     .get();
   if (existing) {
-    setRole(db, existing.id, "admin");
-    return { userId: existing.id, created: false };
+    setRole(db, existing.id, user.role);
+    return existing.id;
   }
-  const signUp = await auth.api.signUpEmail({
-    body: {
-      email: adminUser.email,
-      password: adminUser.password,
-      name: adminUser.name ?? "admin",
-    },
-  });
-  setRole(db, signUp.user.id, "admin");
-  return { userId: signUp.user.id, created: true };
-}
-
-/** Create a user with a role (admin-only operation at the API layer). */
-export async function createUser(
-  auth: Auth,
-  db: AxleDatabase,
-  user: { email: string; password: string; name?: string; role: Role },
-): Promise<string> {
-  const signUp = await auth.api.signUpEmail({
-    body: {
+  const id = crypto.randomUUID();
+  const now = new Date();
+  db.insert(authSchema.user)
+    .values({
+      id,
       email: user.email,
-      password: user.password,
       name: user.name ?? user.email,
-    },
-  });
-  setRole(db, signUp.user.id, user.role);
-  return signUp.user.id;
+      emailVerified: true,
+      role: user.role,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .run();
+  return id;
 }
 
 /** Mint an API key for a known user id. */
@@ -118,9 +83,49 @@ export async function createApiKeyFor(
   return created.key;
 }
 
-function setRole(db: AxleDatabase, userId: string, role: Role): void {
+/**
+ * Provision (or reuse) an identity for `email` and mint an API key for it — the
+ * headless path an operator uses to bootstrap the first admin key, and how tests
+ * obtain credentials without an interactive OAuth flow.
+ */
+export async function mintApiKeyForEmail(
+  auth: Auth,
+  db: AxleDatabase,
+  args: { email: string; name?: string; role?: Role },
+): Promise<{ key: string; identity: Identity }> {
+  const role = args.role ?? "member";
+  const userId = ensureUser(db, { email: args.email, name: args.name, role });
+  const key = await createApiKeyFor(
+    auth,
+    userId,
+    args.name ?? `key:${args.email}`,
+  );
+  return { key, identity: { userId, role: roleOf(db, userId) } };
+}
+
+/** Set a user's role by id. */
+export function setRole(db: AxleDatabase, userId: string, role: Role): void {
   db.update(authSchema.user)
     .set({ role })
     .where(eq(authSchema.user.id, userId))
     .run();
+}
+
+/**
+ * Set a user's role by email (admin-only operation at the API layer). Returns
+ * the user id, or null when no user has that email.
+ */
+export function setRoleByEmail(
+  db: AxleDatabase,
+  emailAddress: string,
+  role: Role,
+): string | null {
+  const row = db
+    .select({ id: authSchema.user.id })
+    .from(authSchema.user)
+    .where(eq(authSchema.user.email, emailAddress))
+    .get();
+  if (!row) return null;
+  setRole(db, row.id, role);
+  return row.id;
 }
