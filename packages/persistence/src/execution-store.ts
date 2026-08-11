@@ -38,9 +38,9 @@ export class SqliteExecutionStore implements ExecutionStore {
     const insertExecution = this.db.prepare(
       `INSERT INTO executions
         (id, status, intent, repository_json, change_json, profile_json,
-         plan_json, metrics_json, limits_json, cancel_requested, created_at,
-         started_at, completed_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
+         plan_json, metrics_json, limits_json, environment, cancel_requested,
+         created_at, started_at, completed_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
     );
     insertExecution.run(
       execution.id,
@@ -52,6 +52,7 @@ export class SqliteExecutionStore implements ExecutionStore {
       JSON.stringify(execution.plan),
       JSON.stringify(execution.metrics),
       JSON.stringify(execution.limits),
+      orNull(execution.environment),
       execution.createdAt,
       orNull(execution.startedAt),
       orNull(execution.completedAt),
@@ -310,6 +311,7 @@ export class SqliteExecutionStore implements ExecutionStore {
       profile: JSON.parse(row.profile_json),
       plan: JSON.parse(row.plan_json),
       status: row.status,
+      environment: row.environment ?? undefined,
       createdAt: row.created_at,
       startedAt: row.started_at ?? undefined,
       completedAt: row.completed_at ?? undefined,
