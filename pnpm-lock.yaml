@@ -35,6 +35,9 @@ importers:
       '@axle/artifacts':
         specifier: workspace:*
         version: link:../../packages/artifacts
+      '@axle/auth':
+        specifier: workspace:*
+        version: link:../../packages/auth
       '@axle/config':
         specifier: workspace:*
         version: link:../../packages/config
