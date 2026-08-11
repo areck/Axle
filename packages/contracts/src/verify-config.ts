@@ -25,8 +25,10 @@ export type VerifyConfigStep = z.infer<typeof VerifyConfigStepSchema>;
 export const VerifyConfigSchema = z.object({
   /** Optional schema version, for forward compatibility. */
   version: z.number().int().positive().optional(),
-  /** Execution profile (environment) name, e.g. "node-22". */
+  /** Execution profile (runtime) name, e.g. "node-22". */
   profile: z.string().default("node-22"),
+  /** Control-plane environment whose vars/secrets Axle injects at run time. */
+  environment: z.string().optional(),
   /** The ordered verification steps; at least one is required. */
   steps: z
     .array(VerifyConfigStepSchema)

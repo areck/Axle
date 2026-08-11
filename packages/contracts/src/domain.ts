@@ -254,6 +254,8 @@ export const ExecutionSchema = z.object({
   profile: ExecutionProfileSchema,
   plan: ExecutionPlanSchema,
   status: ExecutionStatusSchema,
+  /** Name of the control-plane environment to resolve vars/secrets from. */
+  environment: z.string().optional(),
   createdAt: z.string(),
   startedAt: z.string().optional(),
   completedAt: z.string().optional(),
