@@ -50,7 +50,30 @@ author it.
   to inspect the repo and write `axle.yaml`. `--write` drops a deterministic
   scaffold instead.
 
+## Verify v3 — environments & secrets ✅
+
+Shipped: control-plane configuration for the variables and secrets a
+verification needs, resolved by Axle at execution time.
+
+- **Environments** (`Environment` contract + `EnvironmentStore` + `/v1/environments`) —
+  a named bundle of variables and secrets, managed behind the API (`axle env
+  set/list/get/delete`). Secret values are write-only: never returned on read.
+- **Resolution & redaction** — an execution references an environment by name;
+  the worker resolves its variables + secret values at run time, injects them
+  into the sandbox, and redacts secret values from all captured output. The
+  execution record stores only the environment's name — secret values never
+  transit the request, the DB execution row, or the logs.
+- **Reference** — `--env <name>` on `verify`/`run`, or `environment:` in `axle.yaml`.
+
 ## Next
+
+1. **Real DockerRuntime** — implement the container lifecycle and a `node-22`
+   base image; make it the default when a daemon is available.
+2. **Richer diagnostics** — Jest and Vitest parsers (the generic parser already
+   strips ANSI and surfaces the assertion); more artifact types.
+3. **Dashboard** (`apps/web`) — minimal React/Vite execution history + detail.
+4. **Secret hardening** — encryption at rest / an external secret backend, and
+   endpoint authentication for the control plane.
 
 1. **Real DockerRuntime** — implement the container lifecycle and a `node-22`
    base image; make it the default when a daemon is available.
