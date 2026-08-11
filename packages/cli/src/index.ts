@@ -1,7 +1,6 @@
 import { resolveConfig } from "@axle/config";
 import { Command } from "commander";
 import {
-  createUserCommand,
   doctorCommand,
   envDeleteCommand,
   envGetCommand,
@@ -11,7 +10,9 @@ import {
   initCommand,
   inspectCommand,
   loginCommand,
+  logoutCommand,
   runCommand,
+  setRoleCommand,
   verifyCommand,
   whoamiCommand,
 } from "./commands";
@@ -97,18 +98,19 @@ async function main(): Promise<void> {
 
   program
     .command("login")
-    .description("Sign in with email/password and store an API key")
-    .requiredOption("--email <email>", "account email")
-    .requiredOption("--password <password>", "account password")
+    .description("Sign in via your browser (OAuth device flow) and store a key")
     .option("--json", "print as JSON", false)
     .action(async (options, thisCommand) => {
       const api = thisCommand.optsWithGlobals().api as string;
-      await loginCommand({
-        api,
-        email: options.email,
-        password: options.password,
-        json: Boolean(options.json),
-      });
+      await loginCommand({ api, json: Boolean(options.json) });
+    });
+
+  program
+    .command("logout")
+    .description("Forget the stored API key")
+    .option("--json", "print as JSON", false)
+    .action(async (options) => {
+      await logoutCommand({ json: Boolean(options.json) });
     });
 
   const auth = program.command("auth").description("Manage identities & roles");
@@ -123,18 +125,15 @@ async function main(): Promise<void> {
     });
 
   auth
-    .command("create-user")
-    .description("Provision a user (admin only)")
-    .requiredOption("--email <email>", "new user's email")
-    .requiredOption("--password <password>", "new user's password")
-    .option("--role <role>", "admin or member", "member")
+    .command("set-role <email>")
+    .description("Set a user's role to admin or member (admin only)")
+    .requiredOption("--role <role>", "admin or member")
     .option("--json", "print as JSON", false)
-    .action(async (options, thisCommand) => {
+    .action(async (email, options, thisCommand) => {
       const api = thisCommand.optsWithGlobals().api as string;
-      await createUserCommand({
+      await setRoleCommand({
         api,
-        email: options.email,
-        password: options.password,
+        email,
         role: options.role,
         json: Boolean(options.json),
       });

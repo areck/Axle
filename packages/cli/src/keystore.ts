@@ -26,6 +26,16 @@ export function writeStoredKey(key: string): string {
   return file;
 }
 
+/** Remove the stored key (logout). Returns true if a key was present. */
+export function clearStoredKey(): boolean {
+  try {
+    fs.unlinkSync(keyFile());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function resolveApiKey(): string | undefined {
   return process.env.AXLE_API_KEY ?? readStoredKey();
 }

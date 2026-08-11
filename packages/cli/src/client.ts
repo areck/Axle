@@ -33,21 +33,6 @@ export class AxleClient {
     );
   }
 
-  /** Exchange email/password for an API key (the login exchange is open). */
-  async login(
-    email: string,
-    password: string,
-  ): Promise<{ key: string; role: string }> {
-    const res = await fetch(`${this.baseUrl}/v1/auth/token`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
-    if (res.status === 401) throw new Error("Invalid email or password.");
-    if (!res.ok) throw new Error(`Login failed (${res.status}).`);
-    return (await res.json()) as { key: string; role: string };
-  }
-
   async whoami(): Promise<{ userId: string; role: string } | null> {
     const res = await fetch(`${this.baseUrl}/v1/auth/whoami`, {
       headers: this.headers(),
@@ -59,24 +44,22 @@ export class AxleClient {
     ).identity;
   }
 
-  async createUser(body: {
-    email: string;
-    password: string;
-    name?: string;
-    role: string;
-  }): Promise<{ userId: string; role: string }> {
-    const res = await fetch(`${this.baseUrl}/v1/auth/users`, {
+  /** Admin-only: set another user's role by email. */
+  async setRole(
+    email: string,
+    role: string,
+  ): Promise<{ userId: string; role: string }> {
+    const res = await fetch(`${this.baseUrl}/v1/auth/roles`, {
       method: "POST",
       headers: this.headers({ "content-type": "application/json" }),
-      body: JSON.stringify(body),
+      body: JSON.stringify({ email, role }),
     });
     if (res.status === 401) throw this.unauthorized();
     if (res.status === 403) {
-      throw new Error("Forbidden — creating users requires the admin role.");
+      throw new Error("Forbidden — managing roles requires the admin role.");
     }
-    if (!res.ok) {
-      throw new Error(`Failed to create user (${res.status}).`);
-    }
+    if (res.status === 404) throw new Error(`No user found for ${email}.`);
+    if (!res.ok) throw new Error(`Failed to set role (${res.status}).`);
     return (await res.json()) as { userId: string; role: string };
   }
 

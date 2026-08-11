@@ -1,8 +1,9 @@
 export {
-  type CreateUserOptions,
-  createUserCommand,
   type LoginOptions,
   loginCommand,
+  logoutCommand,
+  type SetRoleOptions,
+  setRoleCommand,
   whoamiCommand,
 } from "./auth";
 export { doctorCommand } from "./doctor";
