@@ -3,6 +3,7 @@ import { Command } from "commander";
 import {
   doctorCommand,
   executionsCommand,
+  initCommand,
   inspectCommand,
   runCommand,
   verifyCommand,
@@ -59,6 +60,24 @@ async function main(): Promise<void> {
         timeout: Number(options.timeout),
         intent: options.intent,
         json: Boolean(options.json),
+      });
+    });
+
+  program
+    .command("init")
+    .description(
+      "Configure axle.yaml — print an agent prompt to author it, or --write a scaffold",
+    )
+    .option(
+      "--write",
+      "write a detected axle.yaml scaffold instead of a prompt",
+      false,
+    )
+    .option("--force", "overwrite an existing axle.yaml (with --write)", false)
+    .action(async (options) => {
+      await initCommand({
+        write: Boolean(options.write),
+        force: Boolean(options.force),
       });
     });
 

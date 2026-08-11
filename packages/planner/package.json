@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@axle/contracts": "workspace:*"
+    "@axle/contracts": "workspace:*",
+    "yaml": "^2.9.0"
   }
 }

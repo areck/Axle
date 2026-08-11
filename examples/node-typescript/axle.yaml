@@ -1,0 +1,16 @@
+# Axle Verify configuration for this project.
+#
+# When present, `axle.yaml` tells `axle verify` exactly which steps to run
+# (in order, in a clean isolated environment) instead of relying on
+# auto-detection. Generate or refine it with `axle init` — see the README.
+profile: node-22
+steps:
+  - name: install
+    command: npm ci
+  - name: typecheck
+    command: npm run typecheck
+  - name: test
+    command: npm test
+  - name: build
+    command: npm run build
+    required: false

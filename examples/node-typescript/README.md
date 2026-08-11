@@ -2,11 +2,20 @@
 
 A tiny **standalone** project (its own `package.json` + `package-lock.json`, not a
 workspace member) used to demonstrate `axle verify`. It has a `typecheck`, a `test`
-(Vitest), and a `build`, so Axle's planner produces:
+(Vitest), and a `build`.
+
+This project ships an [`axle.yaml`](./axle.yaml), so `axle verify` runs exactly the
+steps declared there:
 
 ```
 install → typecheck → test → build
 ```
+
+Without an `axle.yaml`, Axle auto-detects the same plan from `package.json`. The
+config file makes the plan explicit and lets you customize it (add an e2e step,
+change a command, mark a step non-blocking). Generate one for any project with
+`axle init` — by default it prints a prompt for your coding agent to author the
+file; `axle init --write` drops a detected scaffold instead.
 
 ## Demo: catch a breaking change before committing
 
