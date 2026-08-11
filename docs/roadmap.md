@@ -64,6 +64,10 @@ verification needs, resolved by Axle at execution time.
   execution record stores only the environment's name — secret values never
   transit the request, the DB execution row, or the logs.
 - **Reference** — `--env <name>` on `verify`/`run`, or `environment:` in `axle.yaml`.
+- **Hardening** — secret values are encrypted at rest (AES-256-GCM under
+  `AXLE_SECRET_KEY`; the DB holds only `enc:v1:` ciphertext), and every `/v1`
+  endpoint requires the `AXLE_API_TOKEN` bearer token (`/health` stays open). The
+  API and worker refuse to start without their required env vars.
 
 ## Next
 
@@ -72,14 +76,8 @@ verification needs, resolved by Axle at execution time.
 2. **Richer diagnostics** — Jest and Vitest parsers (the generic parser already
    strips ANSI and surfaces the assertion); more artifact types.
 3. **Dashboard** (`apps/web`) — minimal React/Vite execution history + detail.
-4. **Secret hardening** — encryption at rest / an external secret backend, and
-   endpoint authentication for the control plane.
-
-1. **Real DockerRuntime** — implement the container lifecycle and a `node-22`
-   base image; make it the default when a daemon is available.
-2. **Richer diagnostics** — Jest and Vitest parsers (the generic parser already
-   strips ANSI and surfaces the assertion); more artifact types.
-3. **Dashboard** (`apps/web`) — minimal React/Vite execution history + detail.
+4. **Secret hardening, continued** — key rotation and an external secret backend
+   (encryption at rest + bearer auth shipped in Verify v3).
 
 ## Then — intelligent verification
 

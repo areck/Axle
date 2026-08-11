@@ -4,6 +4,7 @@ import type {
   SetEnvironmentRequest,
 } from "@axle/contracts";
 import { type Database, openDatabase } from "./db";
+import type { Encryptor } from "./secret-crypto";
 import type { EnvironmentStore } from "./types";
 
 /**
@@ -15,16 +16,18 @@ import type { EnvironmentStore } from "./types";
  * their names; only {@link resolveEnvironment} — used by the worker at run time
  * — returns secret values.
  *
- * Note on at-rest storage: values are stored in plaintext in the local SQLite
- * database. That is acceptable for the local control plane (a single-user file
- * on the developer's machine) and deliberately scoped: the read path never
- * exposes secret values and the worker redacts them from logs. Encryption at
- * rest / a real secret backend is a control-plane concern for later.
+ * Secret values are encrypted at rest with the injected {@link Encryptor}
+ * (AES-256-GCM). They are sealed on write and only ever decrypted in
+ * `resolveEnvironment` (the worker's path); the masked reads never touch the
+ * ciphertext. Non-secret variables are stored as-is — they are readable config.
  */
 export class SqliteEnvironmentStore implements EnvironmentStore {
   private readonly db: Database;
 
-  constructor(dbPath: string) {
+  constructor(
+    dbPath: string,
+    private readonly encryptor: Encryptor,
+  ) {
     this.db = openDatabase(dbPath);
   }
 
@@ -52,7 +55,7 @@ export class SqliteEnvironmentStore implements EnvironmentStore {
       upsert.run(name, key, value, 0);
     }
     for (const [key, value] of Object.entries(values.secrets)) {
-      upsert.run(name, key, value, 1);
+      upsert.run(name, key, this.encryptor.encrypt(value), 1);
     }
 
     return (await this.getEnvironment(name)) as Environment;
@@ -97,7 +100,8 @@ export class SqliteEnvironmentStore implements EnvironmentStore {
     const variables: Record<string, string> = {};
     const secrets: Record<string, string> = {};
     for (const row of rows) {
-      if (row.is_secret === 1) secrets[row.key] = row.value;
+      if (row.is_secret === 1)
+        secrets[row.key] = this.encryptor.decrypt(row.value);
       else variables[row.key] = row.value;
     }
     return { variables, secrets };

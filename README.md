@@ -88,14 +88,20 @@ the product layer. See [`docs/architecture.md`](docs/architecture.md).
 
 Requires **Node 22+** and **pnpm**.
 
+The control plane requires two secrets before it will start: an API token
+(bearer auth on every `/v1` endpoint) and a key that encrypts secrets at rest.
+
 ```bash
 pnpm install
+export AXLE_API_TOKEN=$(openssl rand -hex 32)      # the CLI reads this too
+export AXLE_SECRET_KEY=$(openssl rand -base64 32)   # 32 bytes, base64
 pnpm dev          # starts the API (:8787) and the worker
 ```
 
-In another terminal:
+In another terminal (the CLI needs `AXLE_API_TOKEN` in its environment):
 
 ```bash
+export AXLE_API_TOKEN=…   # same value as the API
 pnpm axle doctor
 ```
 
@@ -239,10 +245,19 @@ At run time the worker resolves the environment, injects the variables and
 secrets into the sandbox, and redacts secret values from all captured output.
 The execution record only ever stores the environment's *name*.
 
-> Storage note: in the local control plane, values live in the local SQLite
-> database (single-user, on your machine). The read path never exposes secret
-> values and the worker redacts them from logs; encryption at rest / an external
-> secret backend is a later control-plane concern.
+**Protection.** Secret values are:
+
+- **encrypted at rest** — AES-256-GCM under `AXLE_SECRET_KEY`; the database
+  holds only `enc:v1:…` ciphertext, never plaintext;
+- **behind API access** — every `/v1` endpoint requires the `AXLE_API_TOKEN`
+  bearer token (only `/health` is open);
+- **write-only** — never returned on read, never copied into the execution
+  record, and redacted from logs.
+
+The API and worker refuse to start without their required env vars, so the
+control plane can't come up unauthenticated or storing plaintext secrets. Lose
+`AXLE_SECRET_KEY` and the secrets are unrecoverable, by design. Key rotation and
+an external secret backend are future work.
 
 ## How it works
 

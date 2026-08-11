@@ -26,6 +26,10 @@ export interface AxleConfig {
   artifactsDir: string;
   /** Which runtime to use. */
   runtime: RuntimeSelection;
+  /** Bearer token the API requires and the CLI presents (AXLE_API_TOKEN). */
+  apiToken?: string;
+  /** Base64 32-byte key for encrypting secrets at rest (AXLE_SECRET_KEY). */
+  secretKey?: string;
 }
 
 const DEFAULT_PORT = 8787;
@@ -77,5 +81,7 @@ export function resolveConfig(
     dbPath: path.join(home, "axle.db"),
     artifactsDir: path.join(home, "artifacts"),
     runtime: parseRuntime(env.AXLE_RUNTIME),
+    apiToken: env.AXLE_API_TOKEN,
+    secretKey: env.AXLE_SECRET_KEY,
   };
 }

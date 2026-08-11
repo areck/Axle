@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -15,6 +16,7 @@ import {
 } from "@axle/contracts";
 import { DiagnosticsEngine } from "@axle/diagnostics";
 import {
+  Encryptor,
   SqliteEnvironmentStore,
   SqliteExecutionStore,
 } from "@axle/persistence";
@@ -30,7 +32,10 @@ let engine: ExecutionEngine;
 beforeAll(async () => {
   dir = await fs.mkdtemp(path.join(os.tmpdir(), "axle-engine-"));
   store = new SqliteExecutionStore(path.join(dir, "axle.db"));
-  environments = new SqliteEnvironmentStore(path.join(dir, "axle.db"));
+  environments = new SqliteEnvironmentStore(
+    path.join(dir, "axle.db"),
+    new Encryptor(crypto.randomBytes(32)),
+  );
   engine = new ExecutionEngine({
     store,
     environments,

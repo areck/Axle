@@ -3,6 +3,7 @@ import type { ExecutionPolicy } from "@axle/contracts";
 import type { EnvironmentStore, ExecutionStore } from "@axle/persistence";
 import cors from "@fastify/cors";
 import Fastify, { type FastifyInstance } from "fastify";
+import { registerAuth } from "./auth";
 import { EnvironmentService } from "./environment-service";
 import { environmentRoutes } from "./routes/environments";
 import { executionRoutes } from "./routes/executions";
@@ -16,6 +17,8 @@ export interface ServerDeps {
   environments: EnvironmentStore;
   artifacts: ArtifactStore;
   policy: ExecutionPolicy;
+  /** Bearer token required on every request except /health. */
+  token: string;
 }
 
 /**
@@ -26,6 +29,7 @@ export interface ServerDeps {
 export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   const app = Fastify({ logger: false, bodyLimit: 25 * 1024 * 1024 });
   await app.register(cors, { origin: true });
+  registerAuth(app, deps.token);
 
   const service = new ExecutionService(deps.store, deps.artifacts, deps.policy);
   const environments = new EnvironmentService(deps.environments);

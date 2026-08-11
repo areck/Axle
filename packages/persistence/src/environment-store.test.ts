@@ -1,15 +1,22 @@
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { SqliteEnvironmentStore } from "./environment-store";
+import { Encryptor } from "./secret-crypto";
 
 let dir: string;
+let dbPath: string;
 let store: SqliteEnvironmentStore;
 
 beforeAll(async () => {
   dir = await fs.mkdtemp(path.join(os.tmpdir(), "axle-env-"));
-  store = new SqliteEnvironmentStore(path.join(dir, "axle.db"));
+  dbPath = path.join(dir, "axle.db");
+  store = new SqliteEnvironmentStore(
+    dbPath,
+    new Encryptor(crypto.randomBytes(32)),
+  );
 });
 
 afterAll(async () => {
@@ -38,6 +45,30 @@ describe("SqliteEnvironmentStore", () => {
       variables: { NODE_ENV: "test" },
       secrets: { NPM_TOKEN: "s3cr3t-value" },
     });
+  });
+
+  it("stores secret values encrypted at rest", () => {
+    const sqlite = process.getBuiltinModule("node:sqlite");
+    const raw = new sqlite.DatabaseSync(dbPath);
+    try {
+      const secretRow = raw
+        .prepare(
+          `SELECT value FROM environment_vars WHERE environment_name = 'ci' AND key = 'NPM_TOKEN'`,
+        )
+        .get() as { value: string };
+      expect(secretRow.value).not.toContain("s3cr3t-value");
+      expect(secretRow.value.startsWith("enc:v1:")).toBe(true);
+
+      // A non-secret variable is stored as-is.
+      const varRow = raw
+        .prepare(
+          `SELECT value FROM environment_vars WHERE environment_name = 'ci' AND key = 'NODE_ENV'`,
+        )
+        .get() as { value: string };
+      expect(varRow.value).toBe("test");
+    } finally {
+      raw.close();
+    }
   });
 
   it("merges on upsert; a key set as a secret leaves the variables", async () => {
