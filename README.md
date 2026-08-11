@@ -211,7 +211,8 @@ packages/
   persistence/    SQLite (node:sqlite) store + DB-backed queue
   cli/            The axle CLI
   config/         Shared runtime configuration
-docs/             architecture · execution-model · roadmap
+docs/             architecture · execution-model · execution-infra ·
+                  local-runtime · parallel-execution · roadmap
 ```
 
 ## Development
