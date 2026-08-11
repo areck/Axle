@@ -13,6 +13,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@axle/contracts": "workspace:*"
+    "@axle/contracts": "workspace:*",
+    "better-sqlite3": "^12.11.1",
+    "drizzle-orm": "^0.45.2"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "drizzle-kit": "^0.31.10"
   }
 }

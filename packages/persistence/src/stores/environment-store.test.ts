@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import Database from "better-sqlite3";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { SqliteEnvironmentStore } from "./environment-store";
 import { Encryptor } from "./secret-crypto";
@@ -48,8 +49,7 @@ describe("SqliteEnvironmentStore", () => {
   });
 
   it("stores secret values encrypted at rest", () => {
-    const sqlite = process.getBuiltinModule("node:sqlite");
-    const raw = new sqlite.DatabaseSync(dbPath);
+    const raw = new Database(dbPath);
     try {
       const secretRow = raw
         .prepare(

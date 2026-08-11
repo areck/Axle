@@ -1,57 +1,37 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { DatabaseSync } from "node:sqlite";
-import { SCHEMA } from "./schema";
+import { fileURLToPath } from "node:url";
+import Database from "better-sqlite3";
+import { drizzle } from "drizzle-orm/better-sqlite3";
+import { migrate } from "drizzle-orm/better-sqlite3/migrator";
+import * as schema from "./schema";
+
+export type AxleDatabase = ReturnType<typeof drizzle<typeof schema>>;
 
 /**
- * `node:sqlite` is an experimental builtin that is not listed in
- * `module.builtinModules`, which trips up bundlers (Vite/esbuild) that try to
- * resolve a static `import ... from "node:sqlite"`. We instead grab it at
- * runtime via `process.getBuiltinModule` (Node 22.3+), leaving no static import
- * for a bundler to see. The type still comes from `@types/node`.
+ * Generated migrations live at the package root (`drizzle/`), a sibling of both
+ * `src/` (tsx/vitest) and `dist/` (tsup), so this resolves in every run mode.
  */
-type SqliteModule = typeof import("node:sqlite");
-const sqlite = process.getBuiltinModule("node:sqlite") as SqliteModule;
+const MIGRATIONS_DIR = fileURLToPath(new URL("../drizzle", import.meta.url));
 
 /**
- * Open (creating if necessary) the Axle SQLite database.
+ * Open (creating if necessary) the Axle database on better-sqlite3 + Drizzle.
  *
- * WAL mode + a busy timeout let the API and worker processes share one database
- * file safely (concurrent readers, single writer).
+ * WAL mode + a busy timeout let the API and worker processes share one file
+ * (concurrent readers, single writer); foreign keys are enforced. The schema is
+ * brought up to date from the generated migrations.
  */
-export function openDatabase(dbPath: string): DatabaseSync {
+export function openDatabase(dbPath: string): AxleDatabase {
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-  const db = new sqlite.DatabaseSync(dbPath);
-  db.exec("PRAGMA journal_mode = WAL;");
-  db.exec("PRAGMA busy_timeout = 5000;");
-  db.exec("PRAGMA foreign_keys = ON;");
-  db.exec(SCHEMA);
-  migrate(db);
+  const sqlite = new Database(dbPath);
+  sqlite.pragma("journal_mode = WAL");
+  sqlite.pragma("busy_timeout = 5000");
+  sqlite.pragma("foreign_keys = ON");
+  const db = drizzle(sqlite, { schema });
+  migrate(db, { migrationsFolder: MIGRATIONS_DIR });
   return db;
 }
 
-/**
- * Forward-only migrations for databases created by an earlier schema. `SCHEMA`
- * is `CREATE TABLE IF NOT EXISTS`, so columns added to an existing table land
- * here as idempotent `ADD COLUMN`s rather than in the create statement.
- */
-function migrate(db: DatabaseSync): void {
-  ensureColumn(db, "executions", "limits_json", "TEXT");
-  ensureColumn(db, "executions", "environment", "TEXT");
+export function closeDatabase(db: AxleDatabase): void {
+  db.$client.close();
 }
-
-/** Add `column` to `table` if it isn't already present. */
-function ensureColumn(
-  db: DatabaseSync,
-  table: string,
-  column: string,
-  type: string,
-): void {
-  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as {
-    name: string;
-  }[];
-  if (columns.some((c) => c.name === column)) return;
-  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
-}
-
-export type Database = DatabaseSync;

@@ -1,5 +1,6 @@
 export * from "./types";
-export { openDatabase, type Database } from "./db";
-export { SqliteExecutionStore } from "./execution-store";
-export { SqliteEnvironmentStore } from "./environment-store";
-export { Encryptor } from "./secret-crypto";
+export { type AxleDatabase, closeDatabase, openDatabase } from "./db";
+export * as schema from "./schema";
+export { SqliteExecutionStore } from "./stores/execution-store";
+export { SqliteEnvironmentStore } from "./stores/environment-store";
+export { Encryptor } from "./stores/secret-crypto";

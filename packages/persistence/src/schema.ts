@@ -1,92 +1,132 @@
+import {
+  index,
+  integer,
+  primaryKey,
+  sqliteTable,
+  text,
+} from "drizzle-orm/sqlite-core";
+
 /**
- * SQLite schema for the Axle execution history.
+ * Drizzle schema for the Axle execution history and control-plane config.
  *
- * Structured, queryable columns (status, timestamps, repository) plus JSON for
- * nested value objects. Child tables keep steps, diagnostics, artifacts, and the
- * append-only event log independently addressable.
+ * Structured, queryable columns (status, timestamps, names) plus JSON text for
+ * nested value objects (repository, change, plan, metrics, limits). This is the
+ * single source of truth: `drizzle-kit generate` derives the SQL migrations
+ * under `drizzle/` from these definitions.
  */
-export const SCHEMA = `
-CREATE TABLE IF NOT EXISTS executions (
-  id TEXT PRIMARY KEY,
-  status TEXT NOT NULL,
-  intent TEXT,
-  repository_json TEXT NOT NULL,
-  change_json TEXT NOT NULL,
-  profile_json TEXT NOT NULL,
-  plan_json TEXT NOT NULL,
-  metrics_json TEXT NOT NULL,
-  limits_json TEXT,
-  environment TEXT,
-  cancel_requested INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL,
-  started_at TEXT,
-  completed_at TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_executions_status ON executions(status);
-CREATE INDEX IF NOT EXISTS idx_executions_created ON executions(created_at);
 
-CREATE TABLE IF NOT EXISTS environments (
-  name TEXT PRIMARY KEY,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS environment_vars (
-  environment_name TEXT NOT NULL REFERENCES environments(name) ON DELETE CASCADE,
-  key TEXT NOT NULL,
-  value TEXT NOT NULL,
-  is_secret INTEGER NOT NULL DEFAULT 0,
-  PRIMARY KEY (environment_name, key)
+export const executions = sqliteTable(
+  "executions",
+  {
+    id: text("id").primaryKey(),
+    status: text("status").notNull(),
+    intent: text("intent"),
+    repositoryJson: text("repository_json").notNull(),
+    changeJson: text("change_json").notNull(),
+    profileJson: text("profile_json").notNull(),
+    planJson: text("plan_json").notNull(),
+    metricsJson: text("metrics_json").notNull(),
+    limitsJson: text("limits_json"),
+    environment: text("environment"),
+    cancelRequested: integer("cancel_requested", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    createdAt: text("created_at").notNull(),
+    startedAt: text("started_at"),
+    completedAt: text("completed_at"),
+  },
+  (t) => [
+    index("idx_executions_status").on(t.status),
+    index("idx_executions_created").on(t.createdAt),
+  ],
 );
 
-CREATE TABLE IF NOT EXISTS execution_steps (
-  id TEXT PRIMARY KEY,
-  execution_id TEXT NOT NULL REFERENCES executions(id),
-  planned_step_id TEXT NOT NULL,
-  ordinal INTEGER NOT NULL,
-  name TEXT NOT NULL,
-  command TEXT NOT NULL,
-  status TEXT NOT NULL,
-  exit_code INTEGER,
-  started_at TEXT,
-  completed_at TEXT,
-  duration_ms INTEGER,
-  output_bytes INTEGER,
-  truncated INTEGER
+export const executionSteps = sqliteTable(
+  "execution_steps",
+  {
+    id: text("id").primaryKey(),
+    executionId: text("execution_id")
+      .notNull()
+      .references(() => executions.id),
+    plannedStepId: text("planned_step_id").notNull(),
+    ordinal: integer("ordinal").notNull(),
+    name: text("name").notNull(),
+    command: text("command").notNull(),
+    status: text("status").notNull(),
+    exitCode: integer("exit_code"),
+    startedAt: text("started_at"),
+    completedAt: text("completed_at"),
+    durationMs: integer("duration_ms"),
+    outputBytes: integer("output_bytes"),
+    truncated: integer("truncated", { mode: "boolean" }),
+  },
+  (t) => [index("idx_steps_execution").on(t.executionId, t.ordinal)],
 );
-CREATE INDEX IF NOT EXISTS idx_steps_execution ON execution_steps(execution_id, ordinal);
 
-CREATE TABLE IF NOT EXISTS diagnostics (
-  id TEXT PRIMARY KEY,
-  execution_id TEXT NOT NULL REFERENCES executions(id),
-  step_id TEXT,
-  type TEXT NOT NULL,
-  severity TEXT NOT NULL,
-  message TEXT NOT NULL,
-  file TEXT,
-  line INTEGER,
-  column_no INTEGER,
-  raw_reference TEXT
+export const diagnostics = sqliteTable(
+  "diagnostics",
+  {
+    id: text("id").primaryKey(),
+    executionId: text("execution_id")
+      .notNull()
+      .references(() => executions.id),
+    stepId: text("step_id"),
+    type: text("type").notNull(),
+    severity: text("severity").notNull(),
+    message: text("message").notNull(),
+    file: text("file"),
+    line: integer("line"),
+    columnNo: integer("column_no"),
+    rawReference: text("raw_reference"),
+  },
+  (t) => [index("idx_diag_execution").on(t.executionId)],
 );
-CREATE INDEX IF NOT EXISTS idx_diag_execution ON diagnostics(execution_id);
 
-CREATE TABLE IF NOT EXISTS artifacts (
-  id TEXT PRIMARY KEY,
-  execution_id TEXT NOT NULL REFERENCES executions(id),
-  type TEXT NOT NULL,
-  name TEXT NOT NULL,
-  mime_type TEXT,
-  size_bytes INTEGER,
-  storage_key TEXT NOT NULL
+export const artifacts = sqliteTable(
+  "artifacts",
+  {
+    id: text("id").primaryKey(),
+    executionId: text("execution_id")
+      .notNull()
+      .references(() => executions.id),
+    type: text("type").notNull(),
+    name: text("name").notNull(),
+    mimeType: text("mime_type"),
+    sizeBytes: integer("size_bytes"),
+    storageKey: text("storage_key").notNull(),
+  },
+  (t) => [index("idx_artifacts_execution").on(t.executionId)],
 );
-CREATE INDEX IF NOT EXISTS idx_artifacts_execution ON artifacts(execution_id);
 
-CREATE TABLE IF NOT EXISTS execution_events (
-  seq INTEGER PRIMARY KEY AUTOINCREMENT,
-  execution_id TEXT NOT NULL,
-  type TEXT NOT NULL,
-  payload_json TEXT NOT NULL,
-  created_at TEXT NOT NULL
+export const executionEvents = sqliteTable(
+  "execution_events",
+  {
+    seq: integer("seq").primaryKey({ autoIncrement: true }),
+    executionId: text("execution_id").notNull(),
+    type: text("type").notNull(),
+    payloadJson: text("payload_json").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [index("idx_events_execution").on(t.executionId, t.seq)],
 );
-CREATE INDEX IF NOT EXISTS idx_events_execution ON execution_events(execution_id, seq);
-`;
+
+export const environments = sqliteTable("environments", {
+  name: text("name").primaryKey(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const environmentVars = sqliteTable(
+  "environment_vars",
+  {
+    environmentName: text("environment_name")
+      .notNull()
+      .references(() => environments.name, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    value: text("value").notNull(),
+    isSecret: integer("is_secret", { mode: "boolean" })
+      .notNull()
+      .default(false),
+  },
+  (t) => [primaryKey({ columns: [t.environmentName, t.key] })],
+);

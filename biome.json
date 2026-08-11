@@ -11,7 +11,8 @@
       "**/.axle/**",
       "coverage/**",
       "pnpm-lock.yaml",
-      "examples/**"
+      "examples/**",
+      "**/drizzle/**"
     ]
   },
   "formatter": {
