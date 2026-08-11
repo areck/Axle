@@ -1,54 +1,39 @@
-import { type Auth, createUser, issueApiKey } from "@axle/auth";
+import { type Role, setRoleByEmail } from "@axle/auth";
 import type { AxleDatabase } from "@axle/persistence";
 import type { FastifyPluginAsync } from "fastify";
 import { requireAdmin } from "../auth";
 
 /**
- * Routes for `/v1/auth`. `token` is open (it *is* the login); the rest run
- * behind the API-key auth hook, and `users` additionally requires admin.
+ * Routes for `/v1/auth`, all behind the API-key hook. Human sign-in and key
+ * minting live on the Better Auth surface (`/api/auth/*`); these are the small
+ * Axle-specific additions: report the caller's identity, and let an admin
+ * manage roles.
  */
-export function authRoutes(auth: Auth, db: AxleDatabase): FastifyPluginAsync {
+export function authRoutes(db: AxleDatabase): FastifyPluginAsync {
   return async (app) => {
-    // Exchange email/password for an API key — the CLI login.
-    app.post("/token", async (request, reply) => {
-      const body = request.body as { email?: string; password?: string };
-      if (!body?.email || !body?.password) {
-        return reply.code(400).send({ error: "email and password required" });
-      }
-      const issued = await issueApiKey(auth, db, {
-        email: body.email,
-        password: body.password,
-      });
-      if (!issued)
-        return reply.code(401).send({ error: "invalid credentials" });
-      return reply.send({ key: issued.key, role: issued.identity.role });
-    });
-
-    // Admin-only: provision a user with a role.
-    app.post("/users", async (request, reply) => {
-      if (!requireAdmin(request, reply)) return;
-      const body = request.body as {
-        email?: string;
-        password?: string;
-        name?: string;
-        role?: string;
-      };
-      if (!body?.email || !body?.password) {
-        return reply.code(400).send({ error: "email and password required" });
-      }
-      const role = body.role === "admin" ? "admin" : "member";
-      const userId = await createUser(auth, db, {
-        email: body.email,
-        password: body.password,
-        name: body.name,
-        role,
-      });
-      return reply.code(201).send({ userId, role });
-    });
-
     // Any authenticated caller: report the resolved identity.
     app.get("/whoami", async (request, reply) => {
       return reply.send({ identity: request.identity });
+    });
+
+    // Admin-only: set a user's role by email (promote to admin / demote).
+    app.post("/roles", async (request, reply) => {
+      if (!requireAdmin(request, reply)) return;
+      const body = request.body as { email?: string; role?: string };
+      const role: Role | null =
+        body?.role === "admin"
+          ? "admin"
+          : body?.role === "member"
+            ? "member"
+            : null;
+      if (!body?.email || !role) {
+        return reply
+          .code(400)
+          .send({ error: "email and role (admin|member) required" });
+      }
+      const userId = setRoleByEmail(db, body.email, role);
+      if (!userId) return reply.code(404).send({ error: "user not found" });
+      return reply.send({ userId, role });
     });
   };
 }

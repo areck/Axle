@@ -32,9 +32,23 @@ export interface AxleConfig {
   authSecret?: string;
   /** Public base URL Better Auth advertises (BETTER_AUTH_URL); defaults to apiUrl. */
   authUrl: string;
-  /** Optional admin to seed on API startup (AXLE_ADMIN_EMAIL / AXLE_ADMIN_PASSWORD). */
-  adminEmail?: string;
-  adminPassword?: string;
+  /**
+   * Emails granted the `admin` role on first sign-in (AXLE_ADMIN_EMAILS,
+   * comma-separated). Admins configure environments/secrets and manage roles.
+   */
+  adminEmails: string[];
+  /** GitHub OAuth app credentials (AXLE_GITHUB_CLIENT_ID / _SECRET). */
+  githubClientId?: string;
+  githubClientSecret?: string;
+  /** Google OAuth app credentials (AXLE_GOOGLE_CLIENT_ID / _SECRET). */
+  googleClientId?: string;
+  googleClientSecret?: string;
+  /**
+   * Optional URL the API POSTs `{ email, url }` to when a magic link is
+   * requested (AXLE_MAGIC_LINK_WEBHOOK) — point it at your email/notification
+   * service. When unset, the link is logged to the server console (dev).
+   */
+  magicLinkWebhook?: string;
   /** API key the CLI presents (AXLE_API_KEY). */
   apiKey?: string;
 }
@@ -91,8 +105,21 @@ export function resolveConfig(
     secretKey: env.AXLE_SECRET_KEY,
     authSecret: env.BETTER_AUTH_SECRET,
     authUrl: env.BETTER_AUTH_URL ?? apiUrl,
-    adminEmail: env.AXLE_ADMIN_EMAIL,
-    adminPassword: env.AXLE_ADMIN_PASSWORD,
+    adminEmails: parseList(env.AXLE_ADMIN_EMAILS),
+    githubClientId: env.AXLE_GITHUB_CLIENT_ID,
+    githubClientSecret: env.AXLE_GITHUB_CLIENT_SECRET,
+    googleClientId: env.AXLE_GOOGLE_CLIENT_ID,
+    googleClientSecret: env.AXLE_GOOGLE_CLIENT_SECRET,
+    magicLinkWebhook: env.AXLE_MAGIC_LINK_WEBHOOK,
     apiKey: env.AXLE_API_KEY,
   };
+}
+
+/** Split a comma-separated env value into trimmed, non-empty entries. */
+function parseList(value: string | undefined): string[] {
+  if (!value) return [];
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
 }

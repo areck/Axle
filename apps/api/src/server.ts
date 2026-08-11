@@ -9,8 +9,10 @@ import type {
 import cors from "@fastify/cors";
 import Fastify, { type FastifyInstance } from "fastify";
 import { registerAuth } from "./auth";
+import { betterAuthPlugin } from "./better-auth-handler";
 import { EnvironmentService } from "./environment-service";
 import { authRoutes } from "./routes/auth";
+import { type DevicePageOptions, deviceRoutes } from "./routes/device";
 import { environmentRoutes } from "./routes/environments";
 import { executionRoutes } from "./routes/executions";
 import { healthRoutes } from "./routes/health";
@@ -26,6 +28,8 @@ export interface ServerDeps {
   /** Better Auth instance and the DB it resolves identities/roles against. */
   auth: Auth;
   db: AxleDatabase;
+  /** Which social providers to surface on the device-approval page. */
+  devicePage: DevicePageOptions;
 }
 
 /**
@@ -38,11 +42,17 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   await app.register(cors, { origin: true });
   registerAuth(app, deps.auth, deps.db);
 
+  // Better Auth HTTP surface: OAuth sign-in/callbacks, magic link, the device
+  // flow, sessions, and API-key minting. Encapsulated so its raw-body parser
+  // stays scoped and `/v1` keeps normal JSON parsing.
+  await app.register(betterAuthPlugin(deps.auth), { prefix: "/api/auth" });
+
   const service = new ExecutionService(deps.store, deps.artifacts, deps.policy);
   const environments = new EnvironmentService(deps.environments);
 
   await app.register(healthRoutes);
-  await app.register(authRoutes(deps.auth, deps.db), { prefix: "/v1/auth" });
+  await app.register(deviceRoutes(deps.devicePage));
+  await app.register(authRoutes(deps.db), { prefix: "/v1/auth" });
   await app.register(executionRoutes(service), { prefix: "/v1/executions" });
   await app.register(environmentRoutes(environments), {
     prefix: "/v1/environments",

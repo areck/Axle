@@ -9,14 +9,24 @@ declare module "fastify" {
   }
 }
 
-/** Paths reachable without a valid API key. */
-const OPEN_PATHS = new Set(["/health", "/v1/auth/token"]);
+/** Exact paths reachable without a valid API key. */
+const OPEN_PATHS = new Set(["/health", "/device"]);
 
 /**
- * Authenticate every request with a Better Auth API key (bearer or `x-api-key`)
- * and attach the resolved {@link Identity}. The control plane manages secrets,
- * so it must not be reachable unauthenticated — only `/health` and the login
- * exchange are open. Route handlers then authorize against `request.identity`.
+ * Paths reachable without an Axle API key: `/health`, the device-approval page,
+ * and the entire Better Auth surface (`/api/auth/*`), which carries its own auth
+ * (OAuth, magic link, sessions, device flow, key minting).
+ */
+function isOpenPath(pathname: string): boolean {
+  if (OPEN_PATHS.has(pathname)) return true;
+  return pathname === "/api/auth" || pathname.startsWith("/api/auth/");
+}
+
+/**
+ * Authenticate every `/v1` request with a Better Auth API key (bearer or
+ * `x-api-key`) and attach the resolved {@link Identity}. The control plane
+ * manages secrets, so it must not be reachable unauthenticated. Route handlers
+ * then authorize against `request.identity`.
  */
 export function registerAuth(
   app: FastifyInstance,
@@ -25,7 +35,7 @@ export function registerAuth(
 ): void {
   app.addHook("onRequest", async (request, reply) => {
     if (request.method === "OPTIONS") return;
-    if (OPEN_PATHS.has(request.url.split("?")[0])) return;
+    if (isOpenPath(request.url.split("?")[0])) return;
 
     const key = presentedKey(request);
     if (!key) return reply.code(401).send({ error: "unauthorized" });

@@ -1,5 +1,9 @@
 import { LocalArtifactStore } from "@axle/artifacts";
-import { createAuth, ensureAdminUser } from "@axle/auth";
+import {
+  type SocialProviderCredentials,
+  createAuth,
+  mintApiKeyForEmail,
+} from "@axle/auth";
 import { resolveConfig } from "@axle/config";
 import {
   Encryptor,
@@ -44,23 +48,84 @@ async function main(): Promise<void> {
 
   // A dedicated DB handle for auth + identity/role lookups.
   const db = openDatabase(config.dbPath);
+
+  // Enable only the social providers that have credentials configured.
+  const socialProviders: {
+    github?: SocialProviderCredentials;
+    google?: SocialProviderCredentials;
+  } = {};
+  if (config.githubClientId && config.githubClientSecret) {
+    socialProviders.github = {
+      clientId: config.githubClientId,
+      clientSecret: config.githubClientSecret,
+    };
+  }
+  if (config.googleClientId && config.googleClientSecret) {
+    socialProviders.google = {
+      clientId: config.googleClientId,
+      clientSecret: config.googleClientSecret,
+    };
+  }
+
+  // Deliver magic links via a webhook when configured; otherwise log them (dev),
+  // so local sign-in works without any mail infrastructure.
+  const sendMagicLink = async ({
+    email,
+    url,
+  }: {
+    email: string;
+    url: string;
+  }): Promise<void> => {
+    if (config.magicLinkWebhook) {
+      try {
+        await fetch(config.magicLinkWebhook, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ email, url }),
+        });
+      } catch (error) {
+        console.error("[api] magic-link webhook failed:", error);
+      }
+      return;
+    }
+    console.log(`[api] magic-link for ${email}: ${url}`);
+  };
+
   const auth = createAuth({
     db,
     secret: authSecret,
     baseURL: config.authUrl,
+    socialProviders,
+    sendMagicLink,
+    adminEmails: config.adminEmails,
   });
 
-  // Seed an admin identity if configured (idempotent).
-  if (config.adminEmail && config.adminPassword) {
-    const { created } = await ensureAdminUser(auth, db, {
-      email: config.adminEmail,
-      password: config.adminPassword,
-    });
-    const state = created ? "created" : "present";
-    console.log(
-      `[api] admin ${state}: ${config.adminEmail} (run 'axle login' for a key)`,
-    );
+  // Opt-in headless bootstrap: mint an admin API key for the first allowlisted
+  // email and print it once, so automation can obtain a key without a browser.
+  if (process.env.AXLE_BOOTSTRAP === "1") {
+    const email = config.adminEmails[0];
+    if (!email) {
+      console.error(
+        "[api] AXLE_BOOTSTRAP=1 requires AXLE_ADMIN_EMAILS to be set",
+      );
+    } else {
+      const { key } = await mintApiKeyForEmail(auth, db, {
+        email,
+        name: "bootstrap-admin",
+        role: "admin",
+      });
+      console.log(
+        `[api] bootstrap admin key for ${email} (store as AXLE_API_KEY):\n${key}`,
+      );
+    }
   }
+
+  const enabled = Object.keys(socialProviders);
+  console.log(
+    `[api] auth: ${enabled.length ? enabled.join(", ") : "no"} OAuth provider(s); ` +
+      `magic link ${config.magicLinkWebhook ? "via webhook" : "logged (dev)"}; ` +
+      `${config.adminEmails.length} admin email(s) allowlisted`,
+  );
 
   const app = await buildServer({
     store,
@@ -69,6 +134,10 @@ async function main(): Promise<void> {
     policy: new AllowAllPolicy(),
     auth,
     db,
+    devicePage: {
+      github: Boolean(socialProviders.github),
+      google: Boolean(socialProviders.google),
+    },
   });
 
   await app.listen({ host: config.apiHost, port: config.apiPort });
