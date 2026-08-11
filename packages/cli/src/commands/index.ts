@@ -1,4 +1,11 @@
 export { doctorCommand } from "./doctor";
+export {
+  type EnvSetOptions,
+  envDeleteCommand,
+  envGetCommand,
+  envListCommand,
+  envSetCommand,
+} from "./env";
 export { executionsCommand } from "./executions";
 export { type InitOptions, initCommand } from "./init";
 export { inspectCommand } from "./inspect";

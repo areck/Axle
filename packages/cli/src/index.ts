@@ -2,6 +2,10 @@ import { resolveConfig } from "@axle/config";
 import { Command } from "commander";
 import {
   doctorCommand,
+  envDeleteCommand,
+  envGetCommand,
+  envListCommand,
+  envSetCommand,
   executionsCommand,
   initCommand,
   inspectCommand,
@@ -29,6 +33,7 @@ async function main(): Promise<void> {
     .option("--profile <name>", "execution profile", "node-22")
     .option("--timeout <seconds>", "step timeout in seconds", "600")
     .option("--intent <text>", "why you are running this")
+    .option("--env <name>", "environment whose vars/secrets Axle injects")
     .option("--json", "print the final execution as JSON", false)
     .action(async (command, options, thisCommand) => {
       const api = thisCommand.optsWithGlobals().api as string;
@@ -37,6 +42,7 @@ async function main(): Promise<void> {
         profile: options.profile,
         timeout: Number(options.timeout),
         intent: options.intent,
+        environment: options.env,
         json: Boolean(options.json),
       });
     });
@@ -50,6 +56,10 @@ async function main(): Promise<void> {
     .option("--profile <name>", "execution profile", "node-22")
     .option("--timeout <seconds>", "per-step timeout in seconds", "600")
     .option("--intent <text>", "why you are verifying")
+    .option(
+      "--env <name>",
+      "environment whose vars/secrets Axle injects (overrides axle.yaml)",
+    )
     .option("--json", "print the final execution as JSON", false)
     .action(async (options, thisCommand) => {
       const api = thisCommand.optsWithGlobals().api as string;
@@ -59,6 +69,7 @@ async function main(): Promise<void> {
         profile: options.profile,
         timeout: Number(options.timeout),
         intent: options.intent,
+        environment: options.env,
         json: Boolean(options.json),
       });
     });
@@ -79,6 +90,67 @@ async function main(): Promise<void> {
         write: Boolean(options.write),
         force: Boolean(options.force),
       });
+    });
+
+  const collect = (value: string, previous: string[]): string[] => [
+    ...previous,
+    value,
+  ];
+
+  const env = program
+    .command("env")
+    .description("Manage environments & secrets (control-plane config)");
+
+  env
+    .command("set <name>")
+    .description("Create or update an environment's variables and secrets")
+    .option(
+      "--var <KEY=VALUE>",
+      "non-secret variable (repeatable)",
+      collect,
+      [],
+    )
+    .option(
+      "--secret <KEY=VALUE>",
+      "secret value; KEY alone reads $KEY from your env (repeatable)",
+      collect,
+      [],
+    )
+    .option("--json", "print as JSON", false)
+    .action(async (name, options, thisCommand) => {
+      const api = thisCommand.optsWithGlobals().api as string;
+      await envSetCommand(name, {
+        api,
+        var: options.var,
+        secret: options.secret,
+        json: Boolean(options.json),
+      });
+    });
+
+  env
+    .command("list")
+    .description("List environments")
+    .option("--json", "print as JSON", false)
+    .action(async (options, thisCommand) => {
+      const api = thisCommand.optsWithGlobals().api as string;
+      await envListCommand({ api, json: Boolean(options.json) });
+    });
+
+  env
+    .command("get <name>")
+    .description("Show an environment's variables and secret names")
+    .option("--json", "print as JSON", false)
+    .action(async (name, options, thisCommand) => {
+      const api = thisCommand.optsWithGlobals().api as string;
+      await envGetCommand(name, { api, json: Boolean(options.json) });
+    });
+
+  env
+    .command("delete <name>")
+    .description("Delete an environment")
+    .action(async (name, _options, thisCommand) => {
+      const api = thisCommand.optsWithGlobals().api as string;
+      await envDeleteCommand(name, { api });
     });
 
   program

@@ -1,8 +1,10 @@
 import type {
   CreateExecutionRequest,
+  Environment,
   Execution,
   ExecutionEvent,
   ExecutionListResponse,
+  SetEnvironmentRequest,
 } from "@axle/contracts";
 
 /**
@@ -45,6 +47,48 @@ export class AxleClient {
     const res = await fetch(`${this.baseUrl}/v1/executions`);
     if (!res.ok) throw new Error(`Failed to list executions (${res.status}).`);
     return (await res.json()) as ExecutionListResponse;
+  }
+
+  async listEnvironments(): Promise<Environment[]> {
+    const res = await fetch(`${this.baseUrl}/v1/environments`);
+    if (!res.ok)
+      throw new Error(`Failed to list environments (${res.status}).`);
+    return ((await res.json()) as { environments: Environment[] }).environments;
+  }
+
+  async getEnvironment(name: string): Promise<Environment> {
+    const res = await fetch(`${this.baseUrl}/v1/environments/${name}`);
+    if (res.status === 404) throw new Error(`Environment "${name}" not found.`);
+    if (!res.ok)
+      throw new Error(`Failed to fetch environment (${res.status}).`);
+    return (await res.json()) as Environment;
+  }
+
+  async setEnvironment(
+    name: string,
+    body: SetEnvironmentRequest,
+  ): Promise<Environment> {
+    const res = await fetch(`${this.baseUrl}/v1/environments/${name}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      throw new Error(
+        `Failed to set environment (${res.status}): ${await res.text()}`,
+      );
+    }
+    return (await res.json()) as Environment;
+  }
+
+  async deleteEnvironment(name: string): Promise<boolean> {
+    const res = await fetch(`${this.baseUrl}/v1/environments/${name}`, {
+      method: "DELETE",
+    });
+    if (res.status === 404) return false;
+    if (!res.ok)
+      throw new Error(`Failed to delete environment (${res.status}).`);
+    return true;
   }
 
   /** Subscribe to an execution's event stream (Server-Sent Events). */
