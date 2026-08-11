@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS executions (
   plan_json TEXT NOT NULL,
   metrics_json TEXT NOT NULL,
   limits_json TEXT,
+  environment TEXT,
   cancel_requested INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   started_at TEXT,
@@ -23,6 +24,20 @@ CREATE TABLE IF NOT EXISTS executions (
 );
 CREATE INDEX IF NOT EXISTS idx_executions_status ON executions(status);
 CREATE INDEX IF NOT EXISTS idx_executions_created ON executions(created_at);
+
+CREATE TABLE IF NOT EXISTS environments (
+  name TEXT PRIMARY KEY,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS environment_vars (
+  environment_name TEXT NOT NULL REFERENCES environments(name) ON DELETE CASCADE,
+  key TEXT NOT NULL,
+  value TEXT NOT NULL,
+  is_secret INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (environment_name, key)
+);
 
 CREATE TABLE IF NOT EXISTS execution_steps (
   id TEXT PRIMARY KEY,

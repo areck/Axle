@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -14,20 +15,30 @@ import {
   newStepId,
 } from "@axle/contracts";
 import { DiagnosticsEngine } from "@axle/diagnostics";
-import { SqliteExecutionStore } from "@axle/persistence";
+import {
+  Encryptor,
+  SqliteEnvironmentStore,
+  SqliteExecutionStore,
+} from "@axle/persistence";
 import { LocalRuntime } from "@axle/runtime-local";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ExecutionEngine } from "./engine";
 
 let dir: string;
 let store: SqliteExecutionStore;
+let environments: SqliteEnvironmentStore;
 let engine: ExecutionEngine;
 
 beforeAll(async () => {
   dir = await fs.mkdtemp(path.join(os.tmpdir(), "axle-engine-"));
   store = new SqliteExecutionStore(path.join(dir, "axle.db"));
+  environments = new SqliteEnvironmentStore(
+    path.join(dir, "axle.db"),
+    new Encryptor(crypto.randomBytes(32)),
+  );
   engine = new ExecutionEngine({
     store,
+    environments,
     artifacts: new LocalArtifactStore(path.join(dir, "artifacts")),
     runtime: new LocalRuntime(),
     diagnostics: new DiagnosticsEngine(),
@@ -36,6 +47,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   store.close();
+  environments.close();
   await fs.rm(dir, { recursive: true, force: true });
 });
 
@@ -185,5 +197,32 @@ describe("ExecutionEngine (end-to-end)", () => {
     expect(
       final.diagnostics.some((d) => d.message.includes("total time budget")),
     ).toBe(true);
+  });
+
+  it("injects a referenced environment and redacts secret values from output", async () => {
+    await environments.setEnvironment("ci", {
+      variables: { GREETING: "hello-from-var" },
+      secrets: { TOKEN: "sup3r-s3cret-token" },
+    });
+    const execution = queuedExecution([
+      step({
+        id: "p1",
+        name: "echo",
+        command: `node -e "console.log(process.env.GREETING); console.log(process.env.TOKEN)"`,
+      }),
+    ]);
+    execution.environment = "ci";
+
+    const final = await runViaQueue(execution);
+    expect(final.status).toBe("succeeded");
+
+    const events = await store.listEventsSince(final.id, 0);
+    const output = events
+      .filter((e) => e.event.type === "step.output")
+      .map((e) => (e.event as { data: string }).data)
+      .join("");
+    expect(output).toContain("hello-from-var"); // non-secret var passes through
+    expect(output).not.toContain("sup3r-s3cret-token"); // secret redacted
+    expect(output).toContain("***");
   });
 });

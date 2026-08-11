@@ -88,14 +88,20 @@ the product layer. See [`docs/architecture.md`](docs/architecture.md).
 
 Requires **Node 22+** and **pnpm**.
 
+The control plane requires two secrets before it will start: an API token
+(bearer auth on every `/v1` endpoint) and a key that encrypts secrets at rest.
+
 ```bash
 pnpm install
+export AXLE_API_TOKEN=$(openssl rand -hex 32)      # the CLI reads this too
+export AXLE_SECRET_KEY=$(openssl rand -base64 32)   # 32 bytes, base64
 pnpm dev          # starts the API (:8787) and the worker
 ```
 
-In another terminal:
+In another terminal (the CLI needs `AXLE_API_TOKEN` in its environment):
 
 ```bash
+export AXLE_API_TOKEN=…   # same value as the API
 pnpm axle doctor
 ```
 
@@ -157,6 +163,7 @@ pnpm axle executions                   # recent history
 | --- | --- |
 | `axle verify` | Capture the working tree, plan verification (from `axle.yaml`, or auto-detected: install → typecheck → lint → test → build), and run it in isolation. |
 | `axle init` | Configure `axle.yaml`: print a prompt for your coding agent to author it, or `--write` a detected scaffold. |
+| `axle env set/list/get/delete` | Manage environments & secrets in the control plane; reference one from an execution with `--env`. |
 | `axle run "<command>"` | Run a single command in an isolated execution and stream structured evidence. |
 | `axle inspect <id>` | Show the full record for an execution (steps, diagnostics, artifacts, timing). |
 | `axle executions` | List recent execution history. |
@@ -202,6 +209,55 @@ correct file is to let the agent write it: **`axle init`** prints a precise
 prompt (with an auto-detected starting point) for the enclosing agent to inspect
 the repo and author `axle.yaml`. Prefer a deterministic scaffold instead?
 `axle init --write` drops one to disk (`--force` to overwrite).
+
+### Environments & secrets
+
+Tests and builds often need environment variables — `NODE_ENV`, a registry
+token, a database URL. Axle keeps this configuration in the **control plane**,
+behind the API, and resolves it at execution time. Values are **not** in
+`axle.yaml` or git; secret values are **write-only** — set through the API and
+injected into the run, but never returned on read, never copied into the
+execution record, and redacted from logs.
+
+```bash
+# Configure once (a --secret KEY with no value reads $KEY from your shell,
+# so it never lands in shell history).
+axle env set ci --var NODE_ENV=test --secret NPM_TOKEN --secret DATABASE_URL=postgres://…
+axle env get ci        # NODE_ENV=test; NPM_TOKEN (set) — value never shown
+```
+
+Reference an environment from an execution — via the CLI or `axle.yaml`:
+
+```bash
+axle verify --env ci                 # overrides axle.yaml's `environment:`
+axle run "npm run test:integration" --env ci
+```
+
+```yaml
+# axle.yaml
+environment: ci
+steps:
+  - name: test
+    command: npm test
+```
+
+At run time the worker resolves the environment, injects the variables and
+secrets into the sandbox, and redacts secret values from all captured output.
+The execution record only ever stores the environment's *name*.
+
+**Protection.** Secret values are:
+
+- **encrypted at rest** — AES-256-GCM under `AXLE_SECRET_KEY`; the database
+  holds only `enc:v1:…` ciphertext, never plaintext;
+- **behind API access** — every `/v1` endpoint requires the `AXLE_API_TOKEN`
+  bearer token (only `/health` is open);
+- **write-only** — never returned on read, never copied into the execution
+  record, and redacted from logs.
+
+The API and worker refuse to start without their required env vars, so the
+control plane can't come up unauthenticated or storing plaintext secrets. Lose
+`AXLE_SECRET_KEY` and the secrets are unrecoverable, by design. Key rotation and
+an external secret backend are future work.
 
 ## How it works
 

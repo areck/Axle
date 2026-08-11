@@ -9,6 +9,7 @@ export interface RunOptions {
   profile: string;
   timeout: number;
   intent?: string;
+  environment?: string;
   json: boolean;
 }
 
@@ -22,6 +23,7 @@ export async function runCommand(
     repository: { name: path.basename(process.cwd()) },
     profile: { name: options.profile },
     intent: options.intent,
+    environment: options.environment,
     plan: commandPlan(command, {
       profile: options.profile,
       timeoutSeconds: options.timeout,
@@ -32,6 +34,7 @@ export async function runCommand(
     heading("Run");
     field("Profile", options.profile);
     field("Command", command);
+    if (options.environment) field("Environment", options.environment);
   }
 
   await submitAndStream(client, request, options.json);

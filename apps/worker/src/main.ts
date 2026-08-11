@@ -2,7 +2,11 @@ import { LocalArtifactStore } from "@axle/artifacts";
 import { type RuntimeSelection, resolveConfig } from "@axle/config";
 import type { Execution } from "@axle/contracts";
 import { DiagnosticsEngine } from "@axle/diagnostics";
-import { SqliteExecutionStore } from "@axle/persistence";
+import {
+  Encryptor,
+  SqliteEnvironmentStore,
+  SqliteExecutionStore,
+} from "@axle/persistence";
 import type { Runtime } from "@axle/runtime";
 import { DockerRuntime } from "@axle/runtime-docker";
 import { LocalRuntime } from "@axle/runtime-local";
@@ -29,7 +33,17 @@ async function selectRuntime(preference: RuntimeSelection): Promise<Runtime> {
 
 async function main(): Promise<void> {
   const config = resolveConfig();
+  if (!config.secretKey) {
+    console.error(
+      "[worker] AXLE_SECRET_KEY is required. Generate one: openssl rand -base64 32",
+    );
+    process.exit(1);
+  }
   const store = new SqliteExecutionStore(config.dbPath);
+  const environments = new SqliteEnvironmentStore(
+    config.dbPath,
+    Encryptor.fromBase64(config.secretKey),
+  );
   const artifacts = new LocalArtifactStore(config.artifactsDir);
 
   const log = (message: string): void => console.log(`[worker] ${message}`);
@@ -44,6 +58,7 @@ async function main(): Promise<void> {
 
   const engine = new ExecutionEngine({
     store,
+    environments,
     artifacts,
     runtime,
     diagnostics: new DiagnosticsEngine(),
@@ -75,6 +90,7 @@ async function main(): Promise<void> {
   }
 
   store.close();
+  environments.close();
   log("stopped");
 }
 

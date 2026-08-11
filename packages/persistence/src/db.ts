@@ -37,6 +37,7 @@ export function openDatabase(dbPath: string): DatabaseSync {
  */
 function migrate(db: DatabaseSync): void {
   ensureColumn(db, "executions", "limits_json", "TEXT");
+  ensureColumn(db, "executions", "environment", "TEXT");
 }
 
 /** Add `column` to `table` if it isn't already present. */

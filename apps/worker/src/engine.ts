@@ -10,15 +10,18 @@ import {
   newArtifactId,
 } from "@axle/contracts";
 import type { DiagnosticsEngine } from "@axle/diagnostics";
-import type { ExecutionStore } from "@axle/persistence";
+import type { EnvironmentStore, ExecutionStore } from "@axle/persistence";
 import type { ExecutionEnvironment, Runtime } from "@axle/runtime";
 import { OutputCoalescer } from "./output-coalescer";
+import { makeRedactor } from "./redact";
 
 export interface EngineDeps {
   store: ExecutionStore;
   artifacts: ArtifactStore;
   runtime: Runtime;
   diagnostics: DiagnosticsEngine;
+  /** Resolves an execution's referenced environment (vars + secret values). */
+  environments?: EnvironmentStore;
   logger?: (message: string) => void;
 }
 
@@ -74,10 +77,17 @@ export class ExecutionEngine {
         at: now(),
       });
 
+      // Resolve the referenced control-plane environment (vars + secret
+      // values). Secret values are injected into the sandbox and redacted from
+      // all captured output; they are never persisted onto the execution.
+      const { variables, secrets } = await this.resolveEnvironment(execution);
+      const redact = makeRedactor(Object.values(secrets));
+
       env = await runtime.createEnvironment({
         executionId: execution.id,
         profile: execution.profile,
         limits,
+        env: { ...variables, ...secrets },
       });
       await env.prepareWorkspace(execution.change);
 
@@ -177,9 +187,10 @@ export class ExecutionEngine {
             maxOutputBytes: limits.maxOutputBytes,
             signal: controller.signal,
             onOutput: (chunk) => {
-              output += chunk.data;
-              logParts.push(chunk.data);
-              coalescer.push(chunk);
+              const data = redact(chunk.data);
+              output += data;
+              logParts.push(data);
+              coalescer.push({ stream: chunk.stream, data });
             },
           });
         } finally {
@@ -316,6 +327,30 @@ export class ExecutionEngine {
         }
       }
     }
+  }
+
+  /**
+   * Resolve the execution's referenced environment into concrete variables and
+   * secret values. Returns empties when no environment is referenced; throws
+   * (failing the execution) when one is referenced but unavailable, rather than
+   * silently running without the config a step likely depends on.
+   */
+  private async resolveEnvironment(execution: Execution): Promise<{
+    variables: Record<string, string>;
+    secrets: Record<string, string>;
+  }> {
+    if (!execution.environment) return { variables: {}, secrets: {} };
+    const store = this.deps.environments;
+    if (!store) {
+      throw new Error(
+        `Execution references environment "${execution.environment}" but no environment store is configured.`,
+      );
+    }
+    const resolved = await store.resolveEnvironment(execution.environment);
+    if (!resolved) {
+      throw new Error(`Environment not found: ${execution.environment}`);
+    }
+    return resolved;
   }
 
   private async storeLog(executionId: string, content: string): Promise<void> {

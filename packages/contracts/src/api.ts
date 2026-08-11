@@ -18,6 +18,8 @@ export const CreateExecutionRequestSchema = z.object({
   intent: z.string().optional(),
   profile: ExecutionProfileSchema.optional(),
   plan: ExecutionPlanSchema,
+  /** Name of a control-plane environment whose vars/secrets Axle injects. */
+  environment: z.string().optional(),
 });
 export type CreateExecutionRequest = z.infer<
   typeof CreateExecutionRequestSchema
