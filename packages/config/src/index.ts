@@ -26,10 +26,31 @@ export interface AxleConfig {
   artifactsDir: string;
   /** Which runtime to use. */
   runtime: RuntimeSelection;
-  /** Bearer token the API requires and the CLI presents (AXLE_API_TOKEN). */
-  apiToken?: string;
   /** Base64 32-byte key for encrypting secrets at rest (AXLE_SECRET_KEY). */
   secretKey?: string;
+  /** Better Auth signing secret (BETTER_AUTH_SECRET); ≥32 chars. */
+  authSecret?: string;
+  /** Public base URL Better Auth advertises (BETTER_AUTH_URL); defaults to apiUrl. */
+  authUrl: string;
+  /**
+   * Emails granted the `admin` role on first sign-in (AXLE_ADMIN_EMAILS,
+   * comma-separated). Admins configure environments/secrets and manage roles.
+   */
+  adminEmails: string[];
+  /** GitHub OAuth app credentials (AXLE_GITHUB_CLIENT_ID / _SECRET). */
+  githubClientId?: string;
+  githubClientSecret?: string;
+  /** Google OAuth app credentials (AXLE_GOOGLE_CLIENT_ID / _SECRET). */
+  googleClientId?: string;
+  googleClientSecret?: string;
+  /**
+   * Optional URL the API POSTs `{ email, url }` to when a magic link is
+   * requested (AXLE_MAGIC_LINK_WEBHOOK) — point it at your email/notification
+   * service. When unset, the link is logged to the server console (dev).
+   */
+  magicLinkWebhook?: string;
+  /** API key the CLI presents (AXLE_API_KEY). */
+  apiKey?: string;
 }
 
 const DEFAULT_PORT = 8787;
@@ -81,7 +102,24 @@ export function resolveConfig(
     dbPath: path.join(home, "axle.db"),
     artifactsDir: path.join(home, "artifacts"),
     runtime: parseRuntime(env.AXLE_RUNTIME),
-    apiToken: env.AXLE_API_TOKEN,
     secretKey: env.AXLE_SECRET_KEY,
+    authSecret: env.BETTER_AUTH_SECRET,
+    authUrl: env.BETTER_AUTH_URL ?? apiUrl,
+    adminEmails: parseList(env.AXLE_ADMIN_EMAILS),
+    githubClientId: env.AXLE_GITHUB_CLIENT_ID,
+    githubClientSecret: env.AXLE_GITHUB_CLIENT_SECRET,
+    googleClientId: env.AXLE_GOOGLE_CLIENT_ID,
+    googleClientSecret: env.AXLE_GOOGLE_CLIENT_SECRET,
+    magicLinkWebhook: env.AXLE_MAGIC_LINK_WEBHOOK,
+    apiKey: env.AXLE_API_KEY,
   };
+}
+
+/** Split a comma-separated env value into trimmed, non-empty entries. */
+function parseList(value: string | undefined): string[] {
+  if (!value) return [];
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
 }

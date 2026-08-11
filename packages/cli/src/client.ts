@@ -6,17 +6,19 @@ import type {
   ExecutionListResponse,
   SetEnvironmentRequest,
 } from "@axle/contracts";
+import { resolveApiKey } from "./keystore";
 
 /**
  * Thin HTTP client for the Axle API. Uses the global `fetch` (Node 22+).
  *
- * The API requires a bearer token on every endpoint except `/health`; the token
- * comes from `AXLE_API_TOKEN` by default and is attached to each request.
+ * The API requires an API key (bearer) on every endpoint except `/health` and
+ * the login exchange; the key comes from `axle login` (stored) or `AXLE_API_KEY`
+ * and is attached to each request.
  */
 export class AxleClient {
   constructor(
     private readonly baseUrl: string,
-    private readonly token: string | undefined = process.env.AXLE_API_TOKEN,
+    private readonly token: string | undefined = resolveApiKey(),
   ) {}
 
   private headers(extra: Record<string, string> = {}): Record<string, string> {
@@ -27,8 +29,38 @@ export class AxleClient {
 
   private unauthorized(): Error {
     return new Error(
-      "Unauthorized (401) — set AXLE_API_TOKEN to match the API's token.",
+      "Unauthorized (401) — run `axle login` (or set AXLE_API_KEY).",
     );
+  }
+
+  async whoami(): Promise<{ userId: string; role: string } | null> {
+    const res = await fetch(`${this.baseUrl}/v1/auth/whoami`, {
+      headers: this.headers(),
+    });
+    if (res.status === 401) throw this.unauthorized();
+    if (!res.ok) throw new Error(`whoami failed (${res.status}).`);
+    return (
+      (await res.json()) as { identity: { userId: string; role: string } }
+    ).identity;
+  }
+
+  /** Admin-only: set another user's role by email. */
+  async setRole(
+    email: string,
+    role: string,
+  ): Promise<{ userId: string; role: string }> {
+    const res = await fetch(`${this.baseUrl}/v1/auth/roles`, {
+      method: "POST",
+      headers: this.headers({ "content-type": "application/json" }),
+      body: JSON.stringify({ email, role }),
+    });
+    if (res.status === 401) throw this.unauthorized();
+    if (res.status === 403) {
+      throw new Error("Forbidden — managing roles requires the admin role.");
+    }
+    if (res.status === 404) throw new Error(`No user found for ${email}.`);
+    if (!res.ok) throw new Error(`Failed to set role (${res.status}).`);
+    return (await res.json()) as { userId: string; role: string };
   }
 
   async health(): Promise<boolean> {

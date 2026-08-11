@@ -11,7 +11,9 @@
       "**/.axle/**",
       "coverage/**",
       "pnpm-lock.yaml",
-      "examples/**"
+      "examples/**",
+      "**/drizzle/**",
+      "packages/auth/generate-auth.ts"
     ]
   },
   "formatter": {

@@ -9,8 +9,12 @@ import {
   executionsCommand,
   initCommand,
   inspectCommand,
+  loginCommand,
+  logoutCommand,
   runCommand,
+  setRoleCommand,
   verifyCommand,
+  whoamiCommand,
 } from "./commands";
 import { fail } from "./ui";
 
@@ -89,6 +93,49 @@ async function main(): Promise<void> {
       await initCommand({
         write: Boolean(options.write),
         force: Boolean(options.force),
+      });
+    });
+
+  program
+    .command("login")
+    .description("Sign in via your browser (OAuth device flow) and store a key")
+    .option("--json", "print as JSON", false)
+    .action(async (options, thisCommand) => {
+      const api = thisCommand.optsWithGlobals().api as string;
+      await loginCommand({ api, json: Boolean(options.json) });
+    });
+
+  program
+    .command("logout")
+    .description("Forget the stored API key")
+    .option("--json", "print as JSON", false)
+    .action(async (options) => {
+      await logoutCommand({ json: Boolean(options.json) });
+    });
+
+  const auth = program.command("auth").description("Manage identities & roles");
+
+  auth
+    .command("whoami")
+    .description("Show the current identity and role")
+    .option("--json", "print as JSON", false)
+    .action(async (options, thisCommand) => {
+      const api = thisCommand.optsWithGlobals().api as string;
+      await whoamiCommand({ api, json: Boolean(options.json) });
+    });
+
+  auth
+    .command("set-role <email>")
+    .description("Set a user's role to admin or member (admin only)")
+    .requiredOption("--role <role>", "admin or member")
+    .option("--json", "print as JSON", false)
+    .action(async (email, options, thisCommand) => {
+      const api = thisCommand.optsWithGlobals().api as string;
+      await setRoleCommand({
+        api,
+        email,
+        role: options.role,
+        json: Boolean(options.json),
       });
     });
 

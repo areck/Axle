@@ -88,22 +88,33 @@ the product layer. See [`docs/architecture.md`](docs/architecture.md).
 
 Requires **Node 22+** and **pnpm**.
 
-The control plane requires two secrets before it will start: an API token
-(bearer auth on every `/v1` endpoint) and a key that encrypts secrets at rest.
+The control plane requires two secrets before it will start: a Better Auth
+signing secret and a key that encrypts secrets at rest. Sign-in is
+**passwordless** — allowlist your email so your first sign-in is an admin.
 
 ```bash
 pnpm install
-export AXLE_API_TOKEN=$(openssl rand -hex 32)      # the CLI reads this too
-export AXLE_SECRET_KEY=$(openssl rand -base64 32)   # 32 bytes, base64
+export BETTER_AUTH_SECRET=$(openssl rand -base64 32)   # auth signing secret
+export AXLE_SECRET_KEY=$(openssl rand -base64 32)       # encrypts secrets at rest
+export AXLE_ADMIN_EMAILS=you@example.com                # these emails become admins
 pnpm dev          # starts the API (:8787) and the worker
 ```
 
-In another terminal (the CLI needs `AXLE_API_TOKEN` in its environment):
+In another terminal, log in — `axle login` runs the OAuth **device flow**: it
+opens a browser page where you sign in (GitHub, Google, or an emailed magic
+link) and approve, then it stores an API key the CLI presents on every request.
 
 ```bash
-export AXLE_API_TOKEN=…   # same value as the API
+pnpm axle login   # opens the approval page; approve, and the key is stored
 pnpm axle doctor
 ```
+
+> **Zero-config local sign-in:** with no OAuth app configured, choose *"Email a
+> magic link"* on the approval page — in dev the link is printed to the API
+> server logs, so you can sign in with nothing but your email. To enable real
+> providers set `AXLE_GITHUB_CLIENT_ID`/`_SECRET` (and/or `AXLE_GOOGLE_…`). For
+> headless automation, boot the API once with `AXLE_BOOTSTRAP=1` to print an
+> admin API key you can set as `AXLE_API_KEY`.
 
 ```
 Axle Doctor
@@ -161,9 +172,11 @@ pnpm axle executions                   # recent history
 
 | Command | Description |
 | --- | --- |
+| `axle login` / `axle logout` | Sign in via the browser (OAuth device flow) and store an API key; or forget it. |
+| `axle auth whoami / set-role` | Show the current identity/role; set a user's role by email (admin only). |
 | `axle verify` | Capture the working tree, plan verification (from `axle.yaml`, or auto-detected: install → typecheck → lint → test → build), and run it in isolation. |
 | `axle init` | Configure `axle.yaml`: print a prompt for your coding agent to author it, or `--write` a detected scaffold. |
-| `axle env set/list/get/delete` | Manage environments & secrets in the control plane; reference one from an execution with `--env`. |
+| `axle env set/list/get/delete` | Manage environments & secrets in the control plane (writes require admin); reference one from an execution with `--env`. |
 | `axle run "<command>"` | Run a single command in an isolated execution and stream structured evidence. |
 | `axle inspect <id>` | Show the full record for an execution (steps, diagnostics, artifacts, timing). |
 | `axle executions` | List recent execution history. |
@@ -249,15 +262,30 @@ The execution record only ever stores the environment's *name*.
 
 - **encrypted at rest** — AES-256-GCM under `AXLE_SECRET_KEY`; the database
   holds only `enc:v1:…` ciphertext, never plaintext;
-- **behind API access** — every `/v1` endpoint requires the `AXLE_API_TOKEN`
-  bearer token (only `/health` is open);
+- **behind authenticated, role-gated access** — every `/v1` endpoint requires a
+  Better Auth API key (only `/health`, the device-approval page, and the
+  `/api/auth/*` sign-in surface are open), and **writing** environments/secrets
+  requires the **admin** role (members can run, verify, inspect, and read);
 - **write-only** — never returned on read, never copied into the execution
   record, and redacted from logs.
 
 The API and worker refuse to start without their required env vars, so the
 control plane can't come up unauthenticated or storing plaintext secrets. Lose
-`AXLE_SECRET_KEY` and the secrets are unrecoverable, by design. Key rotation and
-an external secret backend are future work.
+`AXLE_SECRET_KEY` and the secrets are unrecoverable, by design. Key rotation, an
+external secret backend, and richer team roles are future work.
+
+### Authentication & roles
+
+Identities are managed by **[Better Auth](https://www.better-auth.com/)** on the
+same Drizzle database, and are **passwordless**. Humans sign in with a social
+provider (**GitHub** / **Google**) or an **email magic link**; the CLI uses the
+OAuth 2.0 **device flow** (`axle login`) and mints a long-lived **API key**
+(`axk_…`) that agents and CI present as a bearer token on every `/v1` request.
+The `admin` plugin adds roles (**admin** / **member**) the API authorizes
+against; emails in **`AXLE_ADMIN_EMAILS`** become admins on first sign-in, and an
+admin can promote/demote others with `axle auth set-role`. Keys are stored at
+`$AXLE_HOME/api-key` (mode 0600). Teams/orgs, mounting the full auth surface, and
+key rotation are the next auth step.
 
 ## How it works
 

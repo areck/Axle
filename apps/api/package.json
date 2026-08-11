@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@axle/artifacts": "workspace:*",
+    "@axle/auth": "workspace:*",
     "@axle/config": "workspace:*",
     "@axle/contracts": "workspace:*",
     "@axle/persistence": "workspace:*",

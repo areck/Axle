@@ -65,9 +65,23 @@ verification needs, resolved by Axle at execution time.
   transit the request, the DB execution row, or the logs.
 - **Reference** — `--env <name>` on `verify`/`run`, or `environment:` in `axle.yaml`.
 - **Hardening** — secret values are encrypted at rest (AES-256-GCM under
-  `AXLE_SECRET_KEY`; the DB holds only `enc:v1:` ciphertext), and every `/v1`
-  endpoint requires the `AXLE_API_TOKEN` bearer token (`/health` stays open). The
-  API and worker refuse to start without their required env vars.
+  `AXLE_SECRET_KEY`; the DB holds only `enc:v1:` ciphertext).
+
+## Verify v4 — Drizzle + Better Auth ✅
+
+Shipped: the persistence layer moved onto an ORM, and real managed auth.
+
+- **Drizzle ORM** — persistence migrated from raw `node:sqlite` to Drizzle over
+  better-sqlite3; the schema is the single source of truth and `drizzle-kit`
+  owns migrations. Stores live under `packages/persistence/src/stores/`.
+- **Better Auth** (`@axle/auth`) — **passwordless** identities on the same Drizzle
+  database: social OAuth (**GitHub**/**Google**) and **email magic link** for
+  humans, the OAuth 2.0 **device flow** for `axle login`, `apiKey` (`axk_…`) as
+  the agent/CI credential, and `admin` roles. The shared `AXLE_API_TOKEN` is
+  replaced by per-identity API keys; **writing environments/secrets requires the
+  admin role**. Admins are designated by the `AXLE_ADMIN_EMAILS` allowlist (or
+  `axle auth set-role`). The API mounts Better Auth at `/api/auth/*` and serves a
+  minimal device-approval page.
 
 ## Next
 
@@ -76,8 +90,10 @@ verification needs, resolved by Axle at execution time.
 2. **Richer diagnostics** — Jest and Vitest parsers (the generic parser already
    strips ANSI and surfaces the assertion); more artifact types.
 3. **Dashboard** (`apps/web`) — minimal React/Vite execution history + detail.
-4. **Secret hardening, continued** — key rotation and an external secret backend
-   (encryption at rest + bearer auth shipped in Verify v3).
+4. **Auth & secrets, continued** — teams/orgs (Better Auth's `organization`
+   plugin) for richer team roles, Axle as an OIDC **provider** so the CLI and a
+   future web app are first-class OAuth clients, key rotation, and an external
+   secret backend.
 
 ## Then — intelligent verification
 
