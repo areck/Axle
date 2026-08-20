@@ -1,231 +1,267 @@
-# Delivery Plan — Phase Breakdown
+# Delivery Plan
 
-This is the execution plan for building Axle out from the bootstrap. Where
-[`roadmap.md`](roadmap.md) states the *vision*, this document sequences the
-*work* into concrete, shippable phases.
+This document sequences the work required to reach the [vision](vision.md). It
+turns the [roadmap](roadmap.md) into independently shippable milestones and uses
+the [isolation ladder](isolation-ladder.md) as the security contract.
 
-**Principles** (carried from the brief):
+## Delivery principles
 
-- Every phase is a **vertical slice** that keeps the repository runnable.
-- When choosing between more features and a cleaner Execution primitive,
-  **prioritize the primitive**.
-- New capabilities land **behind interfaces that already exist**, so the product
-  layer never gets rewritten.
+- Each milestone is a vertical slice and leaves the repository runnable.
+- The Runtime boundary stays provider-neutral.
+- Security requirements are capabilities, not provider names.
+- Autonomous workloads default to L3 microVM isolation.
+- L0 LocalRuntime is explicit and unsafe; it is never a fallback.
+- If no provider satisfies the complete requirement set, the Execution fails
+  before code runs.
+- Provider, policy, environment, and effective capabilities are durable evidence.
+- Performance work cannot weaken isolation, cleanup, or provenance.
 
-## Overview
+## Current baseline ✅
 
-| Phase | Theme | Size | Risk | Outcome |
-| --- | --- | --- | --- | --- |
-| **0** | Bootstrap — Execution primitive + LocalRuntime | — | — | ✅ Shipped |
-| **1** | Change capture + `axle verify` (Local) | L | Med | Hits the brief's Definition of Done |
-| **2** | Real DockerRuntime + base image | M–L | Med–High | Isolated container execution |
-| **3** | Structured diagnostics + artifacts | M | Low–Med | Precise, agent-grade failure evidence |
-| **4** | Minimal dashboard (`apps/web`) | M | Low | Human-visible execution history |
-| **5** | Hardening, cancellation, config, CI | M | Low–Med | Robust, observable, CI-gated |
-| **6+** | Platform trajectory (Plan / runtimes / Control / Review / Ship) | XL | — | The AX platform |
+The repository already proves the product loop:
 
-**Cross-cutting (start in Phase 1):** a GitHub Actions CI workflow — the repo
-currently has none — running `typecheck · test · lint · build` on every PR.
+- capture an uncommitted working tree;
+- derive or load an execution plan;
+- submit, queue, claim, and run an Execution;
+- stream replayable events;
+- normalize diagnostics and store an artifact;
+- persist execution history;
+- resolve named environments, inject variables and secrets, and redact output;
+- inspect the result through the CLI.
 
----
+The only working provider is LocalRuntime. It creates a temporary directory and
+runs a host subprocess, so it is L0. A legacy Docker scaffold and automatic
+probe remain in the source; they are implementation debt, not the forward plan.
 
-## Phase 0 — Bootstrap ✅ (shipped)
+## Milestone 1 — Isolation contract and honest selection
 
-The Execution primitive proven end-to-end: contracts, the Runtime interface with
-a working LocalRuntime (Docker stubbed), API + worker + engine, diagnostics
-(TS + generic), artifacts, SQLite persistence + queue, and the `run` / `inspect`
-/ `executions` / `doctor` CLI. Proven with a hard-coded command; 31 tests.
+**Goal.** Make Axle capable of expressing and enforcing the environment a
+workload requires before adding another provider.
 
----
+### Deliverables
 
-## Phase 1 — Change capture + `axle verify` (Local runtime)
+1. **Contracts**
+   - Add `WorkloadClass`, `IsolationTier`, `Tenancy`, network, filesystem,
+     secret-scope, service, platform, resource, and placement requirement schemas.
+   - Add a provider capability schema using the same dimensions.
+   - Preserve sensible defaults: `autonomous -> minimum L3`; explicit local
+     development may request L0.
+2. **Provider registry and resolver**
+   - Register providers with identity, health, capacity, and testable
+     capabilities.
+   - Filter by all hard requirements, then rank eligible providers by placement
+     preference, health, capacity, latency, and cost.
+   - Return a structured unsatisfied-requirements error when nothing qualifies.
+3. **Evidence and lifecycle**
+   - Record requested requirements, applied policy, selected provider, effective
+     capabilities, environment identity, and any explicit unsafe override.
+   - Emit placement events before provisioning.
+4. **LocalRuntime honesty**
+   - Advertise L0 and require an explicit development/unsafe selection.
+   - Remove automatic fallback to LocalRuntime.
+   - Keep its temporary workspace and environment allowlist for developer
+     convenience, without describing them as isolation.
+5. **Remove the abandoned path**
+   - Delete the legacy runtime package, configuration value, worker selection,
+     daemon probe, dependency entries, and tests associated with Docker.
+   - Do not introduce a replacement packaging contract into product schemas.
+6. **Conformance harness**
+   - Create provider-contract tests for lifecycle and functional parity.
+   - Add tier tests for filesystem escape, networking, metadata/LAN access,
+     resources, cancellation, process-tree cleanup, secrets, artifacts, and
+     provenance.
 
-**Goal.** Turn Axle from "run a command" into "verify an uncommitted change" —
-satisfying the brief's **Definition of Done** on the Local runtime (Docker
-follows in Phase 2).
+### Exit criteria
 
-**Guiding decision — capture the state, not the diff.** The environment needs
-the agent's *current working tree* in a clean place. The obvious design ships a
-base tree + a patch + untracked files and *reconstructs* the tree (base-tree
-transport, `git apply`, three moving parts with real edge cases: CRLF, renames,
-binary, partial hunks). Axle instead ships the **relevant working-tree files
-themselves**. The snapshot already *is* the desired state, so `prepareWorkspace`
-just writes the files. This is self-contained (needs no reachable remote and no
-base tree), binary-safe, and makes Docker prep in Phase 2 trivial (tar →
-`putArchive`). It is precisely the "lightweight repository snapshot" the brief
-calls for when there is no reachable remote. A patch-against-remote transport can
-be added later behind the same `prepareWorkspace` seam *if* very large repos ever
-demand it — deferred until then. (The `ChangeSnapshot` contract and
-`prepareWorkspace` were already simplified to this files model.)
+- An autonomous Execution cannot run because no L3 provider is installed.
+- An explicit L0 development Execution runs and is visibly recorded as unsafe.
+- No unqualified provider can be selected, including during outages.
+- The codebase has no Docker dependency or runtime path.
+- All existing LocalRuntime behavior passes through the new provider contract.
 
-**Deliverables.**
+### Main risk
 
-1. **`packages/git` — change capture (one pure function, git as source of truth).**
-   - `baseSha = git rev-parse HEAD`.
-   - Relevant paths in a single command:
-     `git ls-files -z --cached --others --exclude-standard` — tracked + untracked
-     with `.gitignore` already honoured — read at their current on-disk content.
-     Deleted files are simply absent, which reproduces the deletion.
-   - Exclusion: layer `.axleignore` + a built-in secret denylist (`.env*`, keys,
-     `.ssh`, `secrets/**`) over git's view via the `ignore` package — don't
-     reimplement gitignore semantics.
-   - `changedFiles` metadata from `git status --porcelain`; size/count guards that
-     fail fast pointing at `.axleignore`.
-   - Returns `ChangeSnapshot { baseSha, changedFiles, files }`.
-2. **`packages/planner` — detection + planning as two pure functions** (no classes,
-   no plugin registry for a single ecosystem):
-   - `analyze(root) → ProjectAnalysis` — package manager (lockfile), scripts,
-     TypeScript, test framework. Deterministic, **no LLM**.
-   - `plan(analysis, opts) → ExecutionPlan` — install (`--frozen-lockfile` per pm)
-     → typecheck (if script) → lint (optional) → test → build (gated). Honours
-     `axle.yaml` overrides.
-3. **`axle verify`** — capture → analyze → plan → print summary + plan → submit →
-   stream. Reuses `run`'s streaming/rendering, so `verify` stays thin. Flags:
-   `--command`, `--profile`, `--json`, `--no-cache`, `--intent`.
-4. **`examples/node-typescript`** — a tiny TS app + Vitest + `typecheck`/`build`,
-   and a documented demo: break a test, run `axle verify`, watch Axle catch it.
+Over-designing the capability schema before a real secure provider exercises it.
+Keep the first schema narrow enough for Verify, but model every security-relevant
+dimension separately so the provider spike does not leak vendor concepts upward.
 
-**Key files.** `packages/git/*` (new), `packages/planner/*` (new), `packages/cli`
-(new `verify` command), `examples/node-typescript/*` (new). No runtime or
-contract changes needed — the files-snapshot seam is already in place.
+## Milestone 2 — Managed L3 microVM vertical slice
 
-**Exit criteria (= brief Definition of Done, Local).** From a clean checkout:
-make an uncommitted change that breaks a test → `axle verify` captures the working
-tree, runs in a clean isolated dir, installs deps, runs verification, identifies
-the failing step, and returns structured diagnostics; `axle inspect <id>` shows
-the record; the developer's workspace is unmodified.
+**Goal.** Ship the first secure default for ordinary agent-driven verification.
 
-**Risks.** Secret-exclusion correctness (test hard: clean / modified / untracked
-/ ignored / denylisted); snapshot size on atypical repos (largely handled by
-git's `.gitignore` view — `node_modules`/build already excluded — plus
-`.axleignore` and guards); symlinks (skip in v1, note it).
+### Provider spike
 
----
+Time-box a scored prototype against a small shortlist. Measure:
 
-## Phase 2 — Real DockerRuntime + base image
+- guest-kernel isolation and tenancy semantics;
+- cold and warm start latency;
+- workspace upload and artifact download behavior;
+- streaming output and reliable exit status;
+- cancellation and teardown guarantees;
+- CPU, memory, disk, process, and wall-time enforcement;
+- network deny/allowlist support and metadata protection;
+- step-scoped secret injection without control-plane leakage;
+- immutable environment identity and snapshot support;
+- observability, regional availability, quotas, and unit economics;
+- self-hosting or migration options.
 
-**Goal.** Execute inside a clean, ephemeral, resource-limited container — the
-intended production isolation boundary.
+Select one provider for the first adapter. Keep the scorecard and decision record
+so a second implementation can validate that the contract is truly portable.
 
-**Deliverables.**
+### Deliverables
 
-- Implement `DockerRuntime.createEnvironment` (via `dockerode` or the Docker
-  CLI): create a container from the profile image with `--cpus`/`--memory`, a
-  non-root user, `--init`, **no** Docker socket, **no** host mounts, a dedicated
-  ephemeral workspace; `putArchive` the workspace; stream `exec`; `getArchive`
-  artifacts; force-remove on `destroy`.
-- `docker/node-22.Dockerfile` + a build script (git + corepack baked in).
-- Make Docker the default when a daemon is reachable (`auto`), Local the
-  fallback. Document network posture for dependency installs.
+- Implement provision, prepare workspace, run with streamed output, collect
+  artifacts, cancel, and destroy behind `Runtime`.
+- Support the Node 22 verification profile without exposing vendor image or
+  template identifiers above the provider layer.
+- Enforce ephemeral storage, resource limits, restricted egress, and no inbound
+  connectivity by default.
+- Inject only explicitly granted variables and step-scoped secrets.
+- Record provider, region, environment identity, effective policy, timing, and
+  teardown result.
+- Add end-to-end tests using representative passing, failing, timed-out,
+  cancelled, dependency-installing, and artifact-producing projects.
+- Run the complete L3 conformance suite in CI or a gated provider test pipeline.
 
-**Key files.** `packages/runtime-docker/src/*`, `docker/*`. No product-layer
-changes — this is the payoff of the Runtime boundary.
+### Exit criteria
 
-**Exit criteria.** The full Phase 1 verify flow runs inside a container; a
-Local-vs-Docker parity test suite passes; `axle doctor` reflects the active
-runtime.
+- `axle verify` defaults to the managed L3 provider for autonomous work.
+- The representative-project parity suite passes against L0 and L3, while the
+  security suite passes for L3 only.
+- A provider outage fails closed with a clear explanation and no local fallback.
+- Teardown succeeds after success, failure, timeout, cancellation, and worker
+  interruption recovery.
+- Latency and cost baselines are recorded for later optimization.
 
-**Risks.** Environments without a daemon (keep Local fallback); registry egress
-for installs; image build/caching time.
+### Main risk
 
----
+Letting the first vendor's lifecycle become Axle's product contract. Enforce the
+capability boundary in review and keep all vendor identifiers inside the adapter.
 
-## Phase 3 — Structured diagnostics + artifacts
+## Milestone 3 — Evidence and reliability
 
-**Goal.** Make failure evidence precise enough for an agent to act on without
-reading logs.
+This work can proceed in parallel with the managed-provider milestone after the
+new contracts settle.
 
-**Deliverables.**
+### Deliverables
 
-- Parsers: **Vitest** and **Jest** (failing file/test, expected vs received),
-  **ESLint**. Registered alongside the existing TypeScript + generic parsers.
-- Artifact types beyond `execution.log`: JUnit/test reports, coverage, opt-in
-  build outputs — surfaced in `inspect` and downloadable via the existing
-  artifact endpoint.
+- Vitest, Jest, and ESLint diagnostics using machine-readable reporters where
+  possible.
+- JUnit, coverage, and opt-in build artifacts with explicit collection rules.
+- Mid-step cancellation wired through the worker and provider, terminating the
+  entire process tree.
+- Infrastructure-versus-user failure taxonomy and actionable retry semantics.
+- Queue lease/recovery behavior for worker crashes and abandoned provisioning.
+- Structured service logs and metrics for queue time, provisioning, execution,
+  transfer, teardown, failures, and provider capacity.
+- Secret-key rotation and an external secret-backend interface.
+- Repository CI running typecheck, tests, lint, and build on every change.
 
-**Key files.** `packages/diagnostics/src/*` (new parsers), `apps/worker` (artifact
-collection), `packages/artifacts` (mime/type handling).
+### Exit criteria
 
-**Exit criteria.** A failing Vitest test yields a diagnostic with file, line, and
-expected/received — matching the brief's example output.
+- An agent can act on a common test, type, or lint failure without scraping raw
+  output.
+- Every lifecycle stage can be cancelled or recovered without an orphaned
+  environment.
+- Operators can distinguish code failures from Axle/provider failures.
 
-**Risks.** Reporter output format drift (prefer machine reporters — JUnit/JSON —
-over scraping human output where possible).
+## Milestone 4 — Native L1 local sandbox
 
----
+**Goal.** Provide a low-latency local path for explicitly cooperative work
+without conflating it with the secure autonomous default.
 
-## Phase 4 — Minimal dashboard (`apps/web`)
+### Deliverables
 
-**Goal.** A human-visible view of the execution history the system already
-records.
+- Build platform-specific providers from native filesystem, process, syscall,
+  network, and resource-control primitives.
+- Start with the host operating systems demanded by actual users; do not force
+  false cross-platform uniformity below the capability layer.
+- Run the same lifecycle contract and L1 conformance suite on every backend.
+- Make trust selection explicit in CLI/config and show the effective tier in
+  streaming output, inspection, and the dashboard.
+- Define the support boundary for dependency installation, local services,
+  browser use, and host integration at L1.
 
-**Deliverables.** React + Vite + TS. Two pages: **Executions** (id, project,
-status, created, duration, step count) and **Execution detail** (intent, change
-summary, plan with per-step status, diagnostics, artifacts). Live via the SSE
-endpoint. Minimal styling — functional clarity over polish.
+### Exit criteria
 
-**Key files.** `apps/web/*` (new); wire into `pnpm dev`.
+- Cooperative workloads can request local placement and receive at least L1.
+- Autonomous and untrusted workloads cannot select L1 without a policy-visible
+  override, and never reach it through fallback.
+- Unsupported host capabilities produce a clear preflight failure.
 
-**Exit criteria.** Browse history and watch a live execution update in the
-browser.
+## Milestone 5 — Runtime depth and performance
 
-**Risks.** Low. CORS is already enabled on the API.
+**Goal.** Reduce latency and broaden workloads without changing trust semantics.
 
----
+### Deliverables
 
-## Phase 5 — Hardening, cancellation, config, CI
+- Local L3 microVM providers where host virtualization support is viable.
+- Immutable environment profiles and provenance.
+- Snapshot-based startup, warm pools, and safe dependency caches scoped by
+  tenant, profile, lockfile, and policy.
+- Audited dependency proxies and consistent network allowlists.
+- First-class ephemeral services such as databases and browsers.
+- Additional OS, architecture, mobile, backend, and ML profiles based on demand.
+- Evaluate an L2 userspace-kernel provider only if measured cost, density, or
+  latency requirements justify the extra tier.
 
-**Goal.** Make it robust, observable, and safe to iterate on.
+### Exit criteria
 
-**Deliverables.**
+- Optimizations demonstrably preserve provider conformance and tenant cleanup.
+- Cache and warm-pool keys cannot cross repository, tenant, secret, or policy
+  boundaries.
+- Placement can choose among multiple eligible providers and records why.
 
-- **CI** (bring forward if possible): GitHub Actions running
-  `typecheck · test · lint · build` on PRs.
-- **Cancellation execution:** wire the persisted cancel flag to an
-  `AbortController` that kills the in-flight step (the flag + between-step checks
-  exist; add mid-step interruption).
-- **`axle.yaml`** full support (profile, steps, runtime resources, ignore).
-- Structured logging + an error taxonomy (infrastructure vs user failures);
-  queue-claim durability under crash; broader integration tests.
+## Milestone 6 — Factory scale and broader product
 
-**Key files.** `.github/workflows/ci.yml` (new), `apps/worker` (cancellation),
-`packages/config` + planner (`axle.yaml`).
+**Goal.** Turn secure single executions into the substrate for concurrent
+software factories.
 
-**Exit criteria.** Green CI on every PR; a running execution can be cancelled;
-config file overrides auto-detection.
+### Deliverables
 
----
+- Scheduler leases, quotas, backpressure, priorities, retries, idempotency,
+  regional routing, capacity management, and cost budgets.
+- Multi-tenant identity, repository permissions, audit history, policy bundles,
+  and dedicated-tenancy placement.
+- Dashboard views for live factories, execution relationships, bottlenecks,
+  policy decisions, evidence, and costs.
+- Axle Plan using dependency and execution history for test impact and
+  risk-aware verification.
+- L4 dedicated and specialized providers.
+- Review and Ship workflows built from the same Execution and Evidence model.
 
-## Phase 6+ — Platform trajectory
+### Exit criteria
 
-Larger, post-MVP arcs, each still behind today's seams:
+- Many agents can execute concurrently without resource collisions or policy
+  ambiguity.
+- Every result is attributable to a change, intent, environment, provider,
+  policy, and evidence set.
+- The scheduler can optimize eligible placement but cannot relax hard security
+  requirements.
 
-- **Axle Plan** — planning informed by changed files, dependency graph, test
-  impact, and historical failures, using the execution history Axle Graph
-  already records.
-- **More runtimes / profiles** — E2B, Daytona, Kubernetes, Firecracker,
-  cloud/macOS/Windows workers; browser / Android / iOS / backend / ML profiles —
-  all behind the `Runtime` interface.
-- **Axle Control** — real governance at the `ExecutionPolicy` seam (allowed
-  commands, network, secrets, limits, agent identity, repo permissions).
-- **Review** and **Ship** — the remaining lifecycle stages.
-- **Scale** — swap SQLite → Postgres and the DB queue → Redis/SQS behind their
-  existing interfaces.
+## Sequencing
 
----
-
-## Sequencing & parallelism
-
+```text
+Shipped foundation
+        |
+        v
+M1 isolation contract + remove legacy path
+        |
+        +--------------------+
+        v                    v
+M2 managed L3          M3 evidence/reliability
+        |                    |
+        +----------+---------+
+                   v
+          M4 native L1 local
+                   |
+                   v
+       M5 runtime depth/performance
+                   |
+                   v
+         M6 factory scale + lifecycle
 ```
-Phase 1 (verify) ──┬─► Phase 2 (Docker)   ─┐
-                   ├─► Phase 3 (diagnostics)├─► Phase 5 (hardening/CI) ──► Phase 6+
-                   └─► Phase 4 (dashboard)  ─┘
-```
 
-- **Phase 1 is the critical path** — it unlocks the product and everything after.
-- After Phase 1, **Phases 2, 3, and 4 are largely independent** and can proceed
-  in parallel (Docker, richer diagnostics, and the dashboard touch different
-  packages).
-- **CI (from Phase 5) should start during Phase 1** — it is cheap insurance and
-  guards every later phase.
-- Phase 6+ is continuous and begins once the MVP (Phases 1–5) is solid.
+M1 is the critical path. M3 may run alongside M2 once the new evidence fields
+settle. The dashboard can begin during M3, but it should display isolation and
+placement truth rather than freeze the current L0-only model into the UI.

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Axle — the execution layer for Agent Experience. Axle Verify lets coding agents run and verify uncommitted changes in isolated environments and get back structured evidence.",
+  "description": "Axle — the execution, trust, and evidence layer for Agent Experience. Axle Verify turns uncommitted agent changes into governed executions and structured evidence.",
   "packageManager": "pnpm@10.33.0",
   "engines": {
     "node": ">=22"

@@ -1,24 +1,27 @@
 # Axle
 
-**Axle is building the execution layer for Agent Experience.**
+**Axle is building the execution, trust, and evidence layer for Agent
+Experience.**
 
-The initial product — **Axle Verify** — lets AI coding agents send *uncommitted*
-software changes to isolated execution environments, build and test those
-changes, and receive **structured evidence** back — without consuming or
-contaminating the developer's local machine.
+The initial product—**Axle Verify**—captures an AI coding agent's *uncommitted*
+software changes, runs the appropriate build and test plan in a policy-selected
+environment, and returns **structured evidence**. The goal is safe, parallel
+agent work without consuming or contaminating the developer's machine.
 
-Long term, Axle helps agents **organize, plan, verify, review, and ship**
-software.
+Long term, Axle helps software factories **organize, plan, execute, verify,
+review, and ship** software.
 
 > **Status.** This repository proves the core primitive and the flagship flow:
 > an agent hands Axle an uncommitted change, Axle captures it, runs a
-> verification plan somewhere clean, and the agent gets back trustworthy
-> structured evidence. It ships the domain contracts, the runtime abstraction
-> with a working **LocalRuntime**, a control-plane API, an execution worker, the
-> CLI, **`axle verify`** with change-capture + planner, and **`axle.yaml`** /
-> **`axle init`** for explicit, agent-authored verification config. The real
-> Docker runtime, richer diagnostics, and the dashboard are the next passes (see
-> [`docs/roadmap.md`](docs/roadmap.md)).
+> verification plan in a clean temporary workspace, and returns structured
+> evidence. Change capture, deterministic planning, `axle.yaml`, environments,
+> encrypted secrets, the API, worker, CLI, events, diagnostics, artifacts, and
+> persistence all work end to end. The only working provider is **LocalRuntime**,
+> an explicit L0 host-process development path with **no security isolation**.
+> Next, Axle is adding capability-based placement, removing the abandoned Docker
+> scaffold, and shipping a managed L3 microVM provider as the secure default.
+> See the [vision](docs/vision.md), [isolation ladder](docs/isolation-ladder.md),
+> and [roadmap](docs/roadmap.md).
 
 ---
 
@@ -40,7 +43,7 @@ Agent requests Axle verification      (no commit, no PR)
         ↓
 Axle snapshots the change
         ↓
-Axle executes remotely / in isolation
+Axle places the work in an eligible environment
         ↓
 Axle returns structured evidence
         ↓
@@ -57,32 +60,37 @@ receive evidence about the result:
 execute(change, intent, environment) -> evidence
 ```
 
-An Execution returns structured data — status, steps, diagnostics, artifacts,
-metrics — not raw terminal output. A sandbox is an implementation detail.
+An Execution returns structured data—status, steps, diagnostics, artifacts, and
+metrics—not just raw terminal output. The next contract revision adds policy,
+placement, effective capabilities, and environment provenance to that evidence.
+A sandbox, microVM, dedicated machine, or managed session is an implementation
+detail.
 
 ## Architecture
 
 ```
-CLI  (axle run / inspect / executions / doctor)
-  │   POST /v1/executions
-  ▼
-Axle API (Fastify)  ──►  SQLite: executions · steps · events · diagnostics · artifacts
-  │  ▲                        ▲
-  │  │ SSE (tails events)     │ DB-backed queue (claimNextQueued)
-  ▼  │                        ▼
-CLI ◄┘                 Axle Worker  ──►  Execution Engine
-                                          │  select Runtime
-                                          ▼
-                              Runtime interface ──► LocalRuntime  (working)
-                                                 └► DockerRuntime (stubbed)
-                                          │
-                              Observation → Diagnostics → Artifacts (evidence)
+CLI ──► API ──► Execution store + replayable event log
+ ▲                 │
+ │ SSE             ▼
+ └──────────── Worker / Execution Engine
+                         │
+                         ├─ policy + capability placement  (next slice)
+                         ▼
+                    Runtime interface
+                         ├─ L0 LocalRuntime                (working; unsafe)
+                         ├─ L3 managed microVM             (next secure provider)
+                         └─ L1/L3/L4 providers             (later)
+                         │
+                         ▼
+              Diagnostics + Artifacts + Provenance
 ```
 
-Each boundary has an explicit contract (`packages/contracts`). The **Runtime
-interface** is the seam that lets Docker later be replaced or augmented by
-Daytona, E2B, Kubernetes, Firecracker, or cloud/macOS workers without touching
-the product layer. See [`docs/architecture.md`](docs/architecture.md).
+Each boundary has an explicit contract (`packages/contracts`). The **Runtime**
+interface keeps environment provisioning provider-neutral. Workloads declare
+minimum capabilities; providers declare what they enforce; placement considers
+only eligible providers and never silently weakens isolation. Axle has no Docker
+dependency in its target architecture. See the
+[architecture](docs/architecture.md).
 
 ## Quickstart
 
@@ -95,6 +103,7 @@ The control plane requires two secrets before it will start: an API token
 pnpm install
 export AXLE_API_TOKEN=$(openssl rand -hex 32)      # the CLI reads this too
 export AXLE_SECRET_KEY=$(openssl rand -base64 32)   # 32 bytes, base64
+export AXLE_RUNTIME=local                           # current L0 development path
 pnpm dev          # starts the API (:8787) and the worker
 ```
 
@@ -108,19 +117,21 @@ pnpm axle doctor
 ```
 Axle Doctor
   ✓ git              installed
-  ✕ docker daemon    not running (LocalRuntime will be used)
   ✓ git repository   /path/to/Axle
   ✓ axle api         http://127.0.0.1:8787
-  Runtime        local (no isolation — development only)
+  Runtime        local (L0 — unsafe development only)
 ```
+
+> The current CLI may also print a legacy daemon probe. That bootstrap path is
+> unimplemented and scheduled for removal; it is not part of the roadmap.
 
 > `pnpm axle …` runs the CLI via `tsx`. After `pnpm build`, the `axle` binary is
 > available at `packages/cli/dist/index.js`.
 
 ## Demo
 
-Run a command inside a clean, isolated execution and watch Axle turn a failure
-into structured evidence:
+Run a command inside a clean L0 development execution and watch Axle turn a
+failure into structured evidence:
 
 ```bash
 pnpm axle run 'sh -c "echo boom >&2; exit 1"'
@@ -148,8 +159,9 @@ boom
   Inspect: axle inspect exec_01KZP…
 ```
 
-The execution ran in a throwaway directory — **your workspace was never
-touched** — and the result is a persistent, inspectable record:
+The execution ran in a throwaway directory—**your workspace was never
+touched**—and the result is a persistent, inspectable record. The throwaway
+directory is workspace hygiene, not a security boundary.
 
 ```bash
 pnpm axle inspect exec_01KZP…          # full record
@@ -161,10 +173,10 @@ pnpm axle executions                   # recent history
 
 | Command | Description |
 | --- | --- |
-| `axle verify` | Capture the working tree, plan verification (from `axle.yaml`, or auto-detected: install → typecheck → lint → test → build), and run it in isolation. |
+| `axle verify` | Capture the working tree, plan verification (from `axle.yaml`, or auto-detected: install → typecheck → lint → test → build), and execute it in a clean environment. |
 | `axle init` | Configure `axle.yaml`: print a prompt for your coding agent to author it, or `--write` a detected scaffold. |
 | `axle env set/list/get/delete` | Manage environments & secrets in the control plane; reference one from an execution with `--env`. |
-| `axle run "<command>"` | Run a single command in an isolated execution and stream structured evidence. |
+| `axle run "<command>"` | Run a single command in an execution environment and stream structured evidence. |
 | `axle inspect <id>` | Show the full record for an execution (steps, diagnostics, artifacts, timing). |
 | `axle executions` | List recent execution history. |
 | `axle doctor` | Validate local prerequisites and connectivity. |
@@ -176,7 +188,7 @@ Global: `--api <url>` (defaults to `AXLE_API_URL` / `http://127.0.0.1:8787`).
 
 Run inside a project directory (it captures that project — even a subdirectory
 of a monorepo). Axle reads the uncommitted working tree, resolves a verification
-plan, and runs it in a clean sandbox. See
+plan, and runs it in a clean execution workspace. See
 [`examples/node-typescript`](examples/node-typescript) for a break-a-test demo.
 Secrets are excluded by default (`.gitignore` + `.axleignore` + a built-in
 denylist); nothing is committed or pushed.
@@ -242,7 +254,8 @@ steps:
 ```
 
 At run time the worker resolves the environment, injects the variables and
-secrets into the sandbox, and redacts secret values from all captured output.
+secrets into the execution environment, and redacts secret values from all
+captured output.
 The execution record only ever stores the environment's *name*.
 
 **Protection.** Secret values are:
@@ -265,8 +278,9 @@ an external secret backend are future work.
 2. The **API** validates it (against an `ExecutionPolicy`), persists it as
    `queued`, and returns the record.
 3. The **worker** atomically claims the queued execution (`claimNextQueued`).
-4. The **engine** selects a runtime, provisions a clean environment, prepares
-   the workspace, and runs each plan step sequentially — streaming structured
+4. The **engine** selects a runtime (the planned resolver will enforce policy and
+   capabilities), provisions a clean environment, prepares the workspace, and
+   runs each plan step sequentially—streaming structured
    **events**, enforcing timeouts and output caps, and capturing exit codes.
 5. Output is parsed into **diagnostics**; an `execution.log` **artifact** is
    stored; a final status + **metrics** are persisted.
@@ -275,20 +289,24 @@ an external secret backend are future work.
 
 ## Security
 
-This bootstrap ships **LocalRuntime**, which runs commands in a throwaway temp
-directory on the host. It is fast and works everywhere (including CI and
-machines without Docker), but **it provides no isolation** — never run untrusted
-code through it. It even prints a warning on first use.
+This bootstrap ships **LocalRuntime**, which runs commands in a throwaway
+directory as a normal host subprocess. It preserves the source workspace and
+forwards only an environment allowlist, but it does **not** isolate the host,
+network, credentials, or other processes. It is L0: use it only for explicit
+development with reviewed code.
 
-The intended isolation boundary is **DockerRuntime** (stubbed here): ephemeral,
-resource-limited containers, no host Docker socket, no host filesystem mounts,
-secrets excluded by default, environment destroyed after each run. Even then,
-containers share the host kernel and are not a hard boundary against a
-determined attacker — production Axle Runtime targets hardened isolation
-(microVMs / Firecracker). LocalRuntime already refuses to forward the host
-environment wholesale (only an allowlist reaches executed commands). See
-[`docs/architecture.md`](docs/architecture.md) and
-[`packages/runtime-docker/README.md`](packages/runtime-docker/README.md).
+Axle's secure default for normal autonomous agent work is L3 microVM isolation.
+Cooperative local work may later use an L1 native OS sandbox; sensitive work may
+require dedicated L3 tenancy or an L4 machine. Isolation, network, filesystem,
+secrets, services, resources, environment fidelity, and placement are separate
+requirements.
+
+If no provider satisfies the complete policy, Axle fails before running code.
+It never silently falls back to a weaker tier. Axle will not depend on Docker, a
+daemon, a socket, or an image workflow. The old unimplemented scaffold remains
+only as removal work in the next milestone. See the
+[isolation ladder](docs/isolation-ladder.md) and
+[architecture](docs/architecture.md).
 
 ## Repository layout
 
@@ -298,15 +316,17 @@ apps/
   worker/         Execution engine loop (claim → run → persist)
 packages/
   contracts/      Zod schemas + types — the domain model (the core boundary)
+  git/            Working-tree capture + provenance
+  planner/        Project analysis + deterministic execution plans
   runtime/        Runtime + ExecutionEnvironment interfaces + selector
-  runtime-local/  LocalRuntime (working; dev-only, no isolation)
-  runtime-docker/ DockerRuntime (stubbed behind the interface)
+  runtime-local/  LocalRuntime (working; L0 development only)
+  runtime-docker/ Legacy unimplemented scaffold (scheduled for removal)
   diagnostics/    Pluggable parsers: TypeScript + Generic
   artifacts/      ArtifactStore interface + local filesystem store
   persistence/    SQLite (node:sqlite) store + DB-backed queue
   cli/            The axle CLI
   config/         Shared runtime configuration
-docs/             architecture · execution-model · roadmap
+docs/             vision · isolation ladder · architecture · execution model · roadmap · plan
 ```
 
 ## Development

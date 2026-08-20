@@ -15,6 +15,11 @@ deliberately **not** modeled as a "CI job" or a "sandbox" — those are narrower
 implementation-flavored ideas. The Execution is the durable, inspectable record
 of *what an agent asked for, what happened, and what it means*.
 
+“Trusted” does not mean that submitted code is trusted. It means Axle selected
+an environment whose verified capabilities satisfy the workload's policy. The
+current LocalRuntime does not provide that security boundary; it is an explicit
+L0 development provider. See the [isolation ladder](isolation-ladder.md).
+
 ## Anatomy
 
 ```ts
@@ -35,13 +40,18 @@ interface Execution {
 ```
 
 The full schemas live in [`packages/contracts`](../packages/contracts/src).
+The isolation-contract milestone will extend the durable record with requested
+requirements, the applied policy, placement decision, provider identity,
+effective capabilities, and immutable environment identity. These are evidence
+about *where and under what guarantees* the work ran, rather than details of the
+Execution's logical plan.
 
 ## Lifecycle
 
 ```
 queued        the API accepted the request and persisted it
   ↓
-provisioning  the worker claimed it and is creating an environment
+provisioning  the worker claimed it, resolved placement, and is creating an environment
   ↓
 running       the plan is executing, step by step
   ↓
@@ -89,5 +99,6 @@ verify **uncommitted** work with no commit, branch, or PR, and with no
 patch-apply step in the runtime. The shape leaves room for richer transports
 later (a patch against a base cloned from a remote, a git branch, a PR) behind
 the same `prepareWorkspace` seam, to be added only when a real need appears. In
-this bootstrap pass, `axle run` submits an empty snapshot; populating it from a
-live git workspace (`packages/git` + `axle verify`) is the next milestone.
+the current implementation, `packages/git` and `axle verify` already populate
+the snapshot from a live working tree; `axle run` submits an empty snapshot for
+an ad hoc command.
